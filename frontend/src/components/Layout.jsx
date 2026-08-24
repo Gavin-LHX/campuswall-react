@@ -72,37 +72,20 @@ export default function Layout() {
         <div className="navbar-inner">
           {/* Brand Mark */}
           <Link to="/" className="brand-link">
-            <span className="brand-mark shrink-0" aria-hidden="true">
-              <i className="bi bi-chat-heart-fill" />
-            </span>
+            <span className="brand-mark shrink-0" aria-hidden="true">墙</span>
             <div className="brand-copy flex flex-col leading-tight">
-              <span className="text-base font-black tracking-tight text-[var(--text-primary)] md:text-lg">校园墙</span>
-              <span className="text-[0.68rem] font-medium text-[var(--text-muted)] tracking-wider">CAMPUS WALL</span>
+              <span className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight text-[var(--text-primary)]">校园墙</span>
+              <span className="text-[0.68rem] font-medium tracking-[0.16em] text-[var(--text-muted)]">CAMPUS WALL</span>
             </div>
           </Link>
 
           {/* Desktop Navigation Links */}
           <nav className="site-nav desktop-site-nav">
-            <NavLink className="nav-link" to="/" end>
-              <i className="bi bi-house" />
-              <span>首页</span>
-            </NavLink>
-            <NavLink className="nav-link" to="/wall">
-              <i className="bi bi-chat-square-dots" />
-              <span>校园动态</span>
-            </NavLink>
-            <NavLink className="nav-link" to="/p">
-              <i className="bi bi-hash" />
-              <span>话题</span>
-            </NavLink>
-            <NavLink className="nav-link" to="/apps">
-              <i className="bi bi-grid-fill" />
-              <span>应用广场</span>
-            </NavLink>
-            <NavLink className="nav-link" to="/help">
-              <i className="bi bi-life-preserver" />
-              <span>帮助反馈</span>
-            </NavLink>
+            <NavLink className="nav-link" to="/" end>首页</NavLink>
+            <NavLink className="nav-link" to="/wall">校园墙</NavLink>
+            <NavLink className="nav-link" to="/p">话题</NavLink>
+            <NavLink className="nav-link" to="/apps">应用</NavLink>
+            <NavLink className="nav-link" to="/help">帮助</NavLink>
           </nav>
 
           {/* Right Action Icons */}
@@ -114,9 +97,8 @@ export default function Layout() {
               disabled={!canPublish}
               title={canPublish ? '发布留言' : publishDisabledReason}
             >
-              <i className="bi bi-pencil-square" />
-              <span className="hidden sm:inline">发布动态</span>
-              <span className="mobile-publish-label sm:hidden">发帖</span>
+              <i className="bi bi-pencil" />
+              <span className="hidden sm:inline">写一条</span>
             </button>
 
             {user ? (
@@ -232,11 +214,9 @@ export default function Layout() {
             <span>•</span>
             <Link to="/rules" className="hover:text-[var(--primary-color)]">社区公约</Link>
           </div>
-          <p className="text-sm font-bold text-[var(--text-primary)]">
-            校园墙
-          </p>
+          <p className="text-sm font-[family-name:var(--font-display)] text-[var(--text-primary)]">校园墙</p>
           <span className="text-xs text-[var(--text-muted)]">
-            让校园里的每一次表达都被温柔倾听 · 非官方学生互助交流平台
+            把想说的话，贴在墙上。非官方学生互助交流平台
           </span>
         </div>
       </footer>

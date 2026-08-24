@@ -38,20 +38,10 @@ export default function Partition() {
         </Link>
       </div>
 
-      <div className="hero-section px-8 py-8">
-        <div className="hero-content space-y-1">
-          <span className="page-kicker hero-kicker">
-            <i className="bi bi-tag-fill text-amber-300" />
-            <span>Tag Topic</span>
-          </span>
-          <h1 className="text-2xl md:text-3xl font-black text-white">
-            {tag ? `#${tag}` : '全部话题'}
-          </h1>
-          <p className="hero-subtitle text-xs md:text-sm">
-            共找到 {messages.length} 条归属此话题标签的留言分享
-          </p>
-        </div>
-      </div>
+      <header className="page-header">
+        <h1>{tag ? `#${tag}` : '全部话题'}</h1>
+        <p>这个标签下有 {messages.length} 条留言。</p>
+      </header>
 
       {loading ? (
         <div className="page-center py-12">

@@ -79,13 +79,10 @@ export default function HelpStatus() {
         <Link className="btn btn-sm btn-outline" to="/help"><i className="bi bi-arrow-left" />返回帮助中心</Link>
       </div>
 
-      <section className="hero-section px-8 py-10 text-center">
-        <div className="hero-content space-y-2">
-          <span className="page-kicker hero-kicker"><i className="bi bi-life-preserver" />Tracking Center</span>
-          <h1 className="text-2xl font-black text-white md:text-3xl">查询处理进度</h1>
-          <p className="hero-subtitle mx-auto max-w-md text-sm">使用提交成功后获得的追踪码，查看反馈工单或内容举报的最新状态。</p>
-        </div>
-      </section>
+      <header className="page-header">
+        <h1>查询处理进度</h1>
+        <p>用提交成功后拿到的追踪码，查看反馈或举报的最新状态。</p>
+      </header>
 
       <section className="card p-5">
         <div className="mb-4 inline-flex rounded-xl border border-[var(--border-color)] bg-[var(--card-secondary-bg)] p-1" role="tablist" aria-label="追踪类型">

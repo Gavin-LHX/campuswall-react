@@ -310,35 +310,10 @@ export default function Wall() {
 
   return (
     <div className="space-y-6">
-      {/* Wall Header Overview */}
-      <section className="wall-overview p-6 md:p-8">
-        <div className="wall-overview-copy space-y-2">
-          <span className="page-kicker">
-            <i className="bi bi-chat-square-heart-fill text-rose-500" />
-            <span>Campus Feed</span>
-          </span>
-          <h1 className="text-3xl font-black tracking-tight text-[var(--text-primary)] md:text-4xl">
-            校园墙
-          </h1>
-          <p className="text-sm text-[var(--text-secondary)] max-w-xl leading-relaxed">
-            探索校园动态、分享有趣日常。支持匿名倾诉，图片、音频与短视频自由互动。
-          </p>
-        </div>
-        <div className="wall-stat-grid">
-          <div className="wall-stat-card">
-            <b>{messages.length}</b>
-            <span>当前已展示</span>
-          </div>
-          <div className="wall-stat-card">
-            <b>{filter === 'files' ? '多媒体' : '全部分类'}</b>
-            <span>内容筛选</span>
-          </div>
-          <div className="wall-stat-card">
-            <b>{sortBy === 'likes' ? '最热点赞' : sortBy === 'dislikes' ? '点踩最多' : '最新发布'}</b>
-            <span>排序方式</span>
-          </div>
-        </div>
-      </section>
+      <header className="page-header">
+        <h1>校园墙</h1>
+        <p>匿名也可以说话。往下翻，或者写一条贴上去。</p>
+      </header>
 
       {!canPublish ? (
         <div className="info-callout status-warning">
@@ -474,7 +449,7 @@ export default function Wall() {
       {/* Floating Action Buttons */}
       <div className="fixed right-5 bottom-6 z-40 flex flex-col gap-3">
         <button
-          className="flex h-13 w-13 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-xl hover:scale-110 hover:shadow-2xl transition-transform"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--primary-color)] text-[#fff8f0] shadow-lg transition-transform hover:scale-[0.97]"
           type="button"
           aria-label="发布留言"
           title="发帖"

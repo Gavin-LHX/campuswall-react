@@ -56,18 +56,10 @@ export default function MessageDetail() {
         </span>
       </div>
 
-      <div className="hero-section px-8 py-8">
-        <div className="hero-content space-y-1">
-          <span className="page-kicker hero-kicker">
-            <i className="bi bi-chat-square-quote-fill text-indigo-300" />
-            <span>Detail View</span>
-          </span>
-          <h1 className="text-2xl md:text-3xl font-black text-white">留言详情</h1>
-          <p className="hero-subtitle text-xs md:text-sm">
-            查看完整正文、高清多媒体附件与楼层评论互动
-          </p>
-        </div>
-      </div>
+      <header className="page-header">
+        <h1>这条留言</h1>
+        <p>完整正文、附件和楼下的回复。</p>
+      </header>
 
       {message ? <MessageCard message={message} /> : null}
     </div>

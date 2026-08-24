@@ -122,106 +122,76 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-12">
-      {/* Hero Section */}
-      <section className="hero-section px-6 py-14 text-center md:px-12 md:py-18">
-        <div className="hero-content">
-          <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold backdrop-blur-md bg-white/15 border border-white/20 shadow-inner">
-            <i className="bi bi-stars text-amber-300" />
-            <span>校园社区 · 学生交流平台</span>
-          </div>
-
-          <h1 className="mt-5 text-3xl font-black tracking-tight text-white md:text-5xl drop-shadow-sm">
-            校园墙
+    <div className="space-y-14">
+      <section className="hero-section px-6 py-12 text-left md:px-12 md:py-16">
+        <div className="hero-content mx-auto max-w-3xl">
+          <p className="text-[0.72rem] font-semibold tracking-[0.22em] text-[var(--text-muted)]">CAMPUS WALL</p>
+          <h1 className="display-title mt-3 text-4xl text-[var(--text-primary)] md:text-6xl">
+            把想说的话，<br className="hidden sm:block" />贴在墙上。
           </h1>
-
-          <p className="hero-subtitle mx-auto mt-3 max-w-2xl text-sm md:text-base">
-            记录校园日常、分享心声灵感。匿名倾诉、暖心互动，让每一次发声都有温暖回应。
+          <p className="hero-subtitle mt-4 max-w-xl text-sm md:text-base">
+            匿名倾诉、同学互助。这里没有围观压力，只有被听见的可能。
           </p>
 
-          <div className="runtime-pill mx-auto mt-6 inline-flex flex-wrap items-center justify-center gap-2 rounded-full px-5 py-2 text-xs md:text-sm">
-            <i className="bi bi-clock-history text-amber-300" />
-            <span>本站已稳定运行</span>
-            <b>{runTime.days}</b>天
-            <b>{runTime.hours}</b>小时
-            <b>{runTime.minutes}</b>分钟
-            <b>{runTime.seconds}</b>秒
-          </div>
-
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/wall" className="btn btn-lg hero-cta px-7">
-              <i className="bi bi-compass" />
-              <span>进入校园墙</span>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link to="/wall" className="btn btn-lg btn-primary px-6">
+              <span>去墙上看看</span>
             </Link>
             <button
               type="button"
-              className="btn btn-lg border border-white/30 bg-white/10 text-white backdrop-blur-md hover:bg-white/20 px-7"
+              className="btn btn-lg btn-outline px-6"
               onClick={triggerPublishModal}
               disabled={!canPublish}
-              title={canPublish ? '快速发帖' : publishDisabledReason}
+              title={canPublish ? '写一条' : publishDisabledReason}
             >
-              <i className="bi bi-pencil-square" />
-              <span>快速发帖</span>
+              <span>写一条</span>
             </button>
+            <span className="runtime-pill inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs">
+              已运行 <b>{runTime.days}</b> 天
+            </span>
           </div>
 
-          <div className="hero-bubbles mt-8">
+          <div className="hero-bubbles mt-10">
             <div className="hero-bubble">
-              <div className="flex items-center gap-2 font-bold text-white">
-                <i className="bi bi-incognito text-amber-300 text-lg" />
-                <strong>自由匿名表达</strong>
-              </div>
-              <span>默认匿名保护隐私，放心倾诉心声与烦恼。</span>
+              <strong>默认可匿名</strong>
+              <span>学号只用于认证，公开页不会出现真实身份。</span>
             </div>
             <div className="hero-bubble">
-              <div className="flex items-center gap-2 font-bold text-white">
-                <i className="bi bi-images text-emerald-300 text-lg" />
-                <strong>多媒体互动</strong>
-              </div>
-              <span>支持多图、音频和短视频，分享丰富校园瞬间。</span>
+              <strong>图文都能贴</strong>
+              <span>支持图片、音频和短视频，把校园瞬间留下来。</span>
             </div>
             <div className="hero-bubble">
-              <div className="flex items-center gap-2 font-bold text-white">
-                <i className="bi bi-chat-heart text-rose-300 text-lg" />
-                <strong>同学互助社区</strong>
-              </div>
-              <span>失物招领、学习交流、提问解答一触即达。</span>
+              <strong>同学之间互助</strong>
+              <span>寻物、提问、吐槽、表白，都有人接住。</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Feature Grid */}
       <section>
-        <div className="section-heading mb-8 text-center">
-          <span className="badge font-bold text-xs"><i className="bi bi-lightning-charge-fill text-amber-500 mr-1" />功能特色</span>
-          <h2 className="section-title text-2xl md:text-3xl mt-2 font-bold text-[var(--text-primary)]">为校园交流精心打造</h2>
-          <p className="mt-1.5 text-xs md:text-sm text-[var(--text-secondary)]">轻量极速、温馨友善的校园交流平台</p>
+        <div className="mb-6">
+          <h2 className="section-title text-2xl md:text-3xl text-[var(--text-primary)]">墙上常见的事</h2>
+          <p className="mt-1.5 text-sm text-[var(--text-secondary)]">发得快，回得也快。匿名、图文、互助都在同一面墙。</p>
         </div>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            ['bi-speedometer2', '即刻发表', '轻量极速架构，随时随地一键发布，秒速展现你的精彩想法。'],
-            ['bi-heart-fill', '互动交流', '支持点赞、点踩与盖楼评论，实时倾听大家的声音与共鸣。'],
-            ['bi-cloud-arrow-up', '丰富媒体', '原生支持图片画廊、音频与视频，让每一次表达都有声有色。'],
-            ['bi-shield-check', '安全可靠', '全链路内容管理与防违规机制，用心守护纯粹友善的校园交流环境。']
-          ].map(([icon, title, text]) => (
-            <div key={title} className="card feature-card text-center p-6 space-y-3">
-              <div className="feature-icon mx-auto flex h-12 w-12 items-center justify-center rounded-2xl text-xl bg-[var(--primary-light)] text-[var(--primary-color)]">
-                <i className={`bi ${icon}`} />
-              </div>
-              <h3 className="text-base font-bold text-[var(--text-primary)]">{title}</h3>
-              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{text}</p>
+            ['即刻能发', '打开就能写。短句、长文、一张图，都可以贴上去。'],
+            ['有来有回', '点赞、评论、盖楼。说出来的话，会有人接住。'],
+            ['不只是文字', '图片、音频、短视频都能带上，把现场留下来。'],
+            ['有人值守', '内容会审核和管理，尽量把墙留成干净的公共空间。']
+          ].map(([title, text]) => (
+            <div key={title} className="card feature-card p-5 space-y-2">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">{title}</h3>
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{text}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Quick Composer Section */}
       <section className="mx-auto max-w-3xl">
-        <div className="section-heading mb-6 text-center">
-          <span className="badge font-bold text-xs"><i className="bi bi-chat-left-quote text-[var(--primary-color)] mr-1" />快速发表</span>
-          <h2 className="section-title text-2xl md:text-3xl mt-2 font-bold text-[var(--text-primary)]">此刻有什么想分享？</h2>
-          <p className="mt-1.5 text-xs md:text-sm text-[var(--text-secondary)]">写下你的想法，一键发送至公开墙</p>
+        <div className="mb-5">
+          <h2 className="section-title text-2xl md:text-3xl text-[var(--text-primary)]">先写一句</h2>
+          <p className="mt-1.5 text-sm text-[var(--text-secondary)]">默认匿名。想得完整再发，也可以先写在这里。</p>
         </div>
         <form className="card composer-card p-5 md:p-6" onSubmit={submitQuick}>
           {!canPublish ? (
@@ -266,12 +236,13 @@ export default function Home() {
         </form>
       </section>
 
-      {/* Hot Messages Section */}
       <section>
-        <div className="section-heading mb-6 text-center">
-          <span className="badge font-bold text-xs"><i className="bi bi-fire text-rose-500 mr-1" />热门话题</span>
-          <h2 className="section-title text-2xl md:text-3xl mt-2 font-bold text-[var(--text-primary)]">大家都在聊什么</h2>
-          <p className="mt-1.5 text-xs md:text-sm text-[var(--text-secondary)]">实时汇聚全校师生最关注的精彩动态</p>
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="section-title text-2xl md:text-3xl text-[var(--text-primary)]">最近被看见的</h2>
+            <p className="mt-1.5 text-sm text-[var(--text-secondary)]">墙上正在被讨论的几条。</p>
+          </div>
+          <Link to="/wall" className="text-sm font-semibold text-[var(--primary-color)]">全部动态</Link>
         </div>
 
         {loading ? (
@@ -303,8 +274,8 @@ export default function Home() {
             >
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className={`badge text-xs font-bold ${index === 0 ? 'bg-rose-500 text-white border-transparent' : index === 1 ? 'bg-amber-500 text-white border-transparent' : 'bg-blue-600 text-white border-transparent'}`}>
-                    <i className="bi bi-trophy-fill mr-1 text-[10px]" />TOP {index + 1}
+                  <span className="font-[family-name:var(--font-display)] text-sm text-[var(--text-muted)]">
+                    {String(index + 1).padStart(2, '0')}
                   </span>
                   <span className="text-xs text-[var(--text-muted)]">
                     {message.timestamp ? dayjs(message.timestamp).fromNow() : ''}
@@ -342,16 +313,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* About Section */}
-      <section className="card p-8 md:p-10 text-center relative overflow-hidden">
-        <div className="mx-auto max-w-2xl space-y-3.5">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--primary-light)] text-[var(--primary-color)] text-2xl mx-auto">
-            <i className="bi bi-heart-fill" />
-          </div>
-          <h2 className="text-xl md:text-2xl font-bold text-[var(--text-primary)]">关于本站</h2>
-          <p className="text-xs md:text-sm text-[var(--text-secondary)] leading-relaxed">
-            本站由学生自主搭建与维护，旨在为师生提供一个平等、自由、温馨的交流互动平台。
-            欢迎大家提出宝贵建议，共同建设美好的校园社区！
+      <section className="card p-8 md:p-10">
+        <div className="mx-auto max-w-2xl space-y-3">
+          <h2 className="section-title text-xl md:text-2xl text-[var(--text-primary)]">关于这面墙</h2>
+          <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+            由学生搭建和维护，给同学一个平等说话的地方。不是学校官方站点。欢迎反馈，一起把它留干净。
           </p>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
             <a

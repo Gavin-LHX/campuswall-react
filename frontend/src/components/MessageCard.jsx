@@ -401,100 +401,79 @@ export default function MessageCard({ message, compact = false, onRefresh, onFav
           </div>
         ) : null}
 
-        {/* Action Toolbar */}
-        <div className="message-actions mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-color)] pt-3">
-          <div className="flex items-center gap-2">
-            <button
-              className={`btn btn-sm ${item.liked ? 'btn-primary' : 'btn-outline'}`}
-              type="button"
-              onClick={doLike}
-              disabled={isUnavailable}
-              title={isUnavailable ? unavailableActionText : '点赞'}
-            >
-              <i className={`bi ${item.liked ? 'bi-hand-thumbs-up-fill' : 'bi-hand-thumbs-up'}`} />
-              <span>{item.likes || 0}</span>
-            </button>
-            <button
-              className={`btn btn-sm ${item.disliked ? 'btn-primary' : 'btn-outline'}`}
-              type="button"
-              onClick={doDislike}
-              disabled={isUnavailable}
-              title={isUnavailable ? unavailableActionText : '点踩'}
-            >
-              <i className={`bi ${item.disliked ? 'bi-hand-thumbs-down-fill' : 'bi-hand-thumbs-down'}`} />
-              <span>{item.dislikes || 0}</span>
-            </button>
-            <button
-              className={`btn btn-sm ${commentOpen ? 'bg-[var(--primary-light)] text-[var(--primary-color)]' : 'btn-outline'}`}
-              type="button"
-              onClick={() => setCommentOpen((open) => !open)}
-              disabled={isUnavailable || !canComment}
-              title={isUnavailable ? (isPending ? '待审核的留言不能评论' : '已下架的留言不能评论') : (canComment ? '评论' : commentDisabledReason)}
-            >
-              <i className="bi bi-chat-dots" />
-              <span>评论 {comments.length ? `(${comments.length})` : ''}</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 ml-auto">
-            <button
-              className={`btn btn-sm ${favorited ? 'bg-[var(--primary-light)] text-[var(--primary-color)]' : 'btn-ghost'} px-2.5`}
-              type="button"
-              onClick={handleFavorite}
-              title={favorited ? '取消收藏' : '收藏留言'}
-            >
-              <i className={`bi ${favorited ? 'bi-heart-fill' : 'bi-heart'} text-sm`} />
-              <span className="hidden sm:inline">{favorited ? '已收藏' : '收藏'}</span>
-            </button>
-            <button
-              className="btn btn-sm btn-ghost p-2 text-[var(--text-secondary)]"
-              type="button"
-              onClick={handleShare}
-              disabled={isUnavailable}
-              title={isUnavailable ? '留言公开后才能分享' : '分享链接'}
-            >
-              <i className="bi bi-share text-sm" />
-            </button>
-            {!isUnavailable ? (
-              <>
-                <Link
-                  className="btn btn-sm btn-outline text-xs px-2.5"
-                  to={`/wall/message/${item.id}`}
-                  title="查看详情"
-                >
-                  <i className="bi bi-arrow-up-right" />
-                  <span>详情</span>
-                </Link>
-                <Link
-                  className="btn btn-sm btn-ghost p-2 text-[var(--text-muted)] hover:text-rose-500"
-                  to={`/help/report/${item.id}`}
-                  title="举报违规"
-                >
-                  <i className="bi bi-flag text-xs" />
-                </Link>
-              </>
-            ) : null}
-            {onDeleteRequest ? (
-              <button
-                className="btn btn-sm btn-ghost p-2 text-[var(--text-muted)] hover:text-rose-500"
-                type="button"
-                onClick={() => onDeleteRequest(item)}
-                title="删除我的留言"
+        <div className="message-actions mt-4 flex flex-wrap items-center gap-1 border-t border-[var(--border-color)] pt-2">
+          <button
+            className={`feed-action ${item.liked ? 'is-on' : ''}`}
+            type="button"
+            onClick={doLike}
+            disabled={isUnavailable}
+            title={isUnavailable ? unavailableActionText : '点赞'}
+          >
+            <i className={`bi ${item.liked ? 'bi-hand-thumbs-up-fill' : 'bi-hand-thumbs-up'}`} />
+            <span>{item.likes || 0}</span>
+          </button>
+          <button
+            className={`feed-action ${item.disliked ? 'is-on' : ''}`}
+            type="button"
+            onClick={doDislike}
+            disabled={isUnavailable}
+            title={isUnavailable ? unavailableActionText : '点踩'}
+          >
+            <i className={`bi ${item.disliked ? 'bi-hand-thumbs-down-fill' : 'bi-hand-thumbs-down'}`} />
+            <span>{item.dislikes || 0}</span>
+          </button>
+          <button
+            className={`feed-action ${commentOpen ? 'is-on' : ''}`}
+            type="button"
+            onClick={() => setCommentOpen((open) => !open)}
+            disabled={isUnavailable || !canComment}
+            title={isUnavailable ? (isPending ? '待审核的留言不能评论' : '已下架的留言不能评论') : (canComment ? '评论' : commentDisabledReason)}
+          >
+            <i className="bi bi-chat-dots" />
+            <span>{comments.length || '评论'}</span>
+          </button>
+          <button
+            className={`feed-action ${favorited ? 'is-on' : ''}`}
+            type="button"
+            onClick={handleFavorite}
+            title={favorited ? '取消收藏' : '收藏留言'}
+          >
+            <i className={`bi ${favorited ? 'bi-heart-fill' : 'bi-heart'}`} />
+          </button>
+          <button
+            className="feed-action"
+            type="button"
+            onClick={handleShare}
+            disabled={isUnavailable}
+            title={isUnavailable ? '留言公开后才能分享' : '分享链接'}
+          >
+            <i className="bi bi-share" />
+          </button>
+          {!isUnavailable ? (
+            <>
+              <Link className="feed-action ml-auto" to={`/wall/message/${item.id}`} title="查看详情">
+                <span>详情</span>
+                <i className="bi bi-arrow-up-right" />
+              </Link>
+              <Link
+                className="feed-action"
+                to={`/help/report/${item.id}`}
+                title="举报违规"
               >
-                <i className="bi bi-trash text-sm" />
-              </button>
-            ) : null}
-            {onEditRequest ? (
-              <button
-                className="btn btn-sm btn-ghost p-2 text-[var(--text-muted)] hover:text-[var(--primary-color)]"
-                type="button"
-                onClick={() => onEditRequest(item)}
-                title="编辑我的留言"
-              >
-                <i className="bi bi-pencil text-sm" />
-              </button>
-            ) : null}
-          </div>
+                <i className="bi bi-flag" />
+              </Link>
+            </>
+          ) : null}
+          {onDeleteRequest ? (
+            <button className="feed-action" type="button" onClick={() => onDeleteRequest(item)} title="删除我的留言">
+              <i className="bi bi-trash" />
+            </button>
+          ) : null}
+          {onEditRequest ? (
+            <button className="feed-action" type="button" onClick={() => onEditRequest(item)} title="编辑我的留言">
+              <i className="bi bi-pencil" />
+            </button>
+          ) : null}
         </div>
 
         {/* Comment Drawer */}

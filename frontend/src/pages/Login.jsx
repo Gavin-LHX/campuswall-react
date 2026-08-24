@@ -73,8 +73,8 @@ export default function Login() {
             <i className="bi bi-shield-check" />
             <span>学生认证中心</span>
           </span>
-          <h1 className="text-3xl md:text-4xl font-black tracking-tight text-[var(--text-primary)]">
-            学生账号登录
+          <h1 className="display-title text-3xl md:text-4xl text-[var(--text-primary)]">
+            用学号进来
           </h1>
           <p className="text-sm md:text-base text-[var(--text-secondary)] leading-relaxed">
             登录后可在发帖时选择展示个性昵称与头像，支持随时切换为完全匿名模式。学号仅用于身份认证与后台保障，绝不会在公开页面展示。
@@ -121,7 +121,7 @@ export default function Login() {
             <i className="bi bi-box-arrow-in-right" />
             <span>Login</span>
           </span>
-          <h2 className="text-2xl font-black text-[var(--text-primary)]">账号登录</h2>
+          <h2 className="display-title text-2xl text-[var(--text-primary)]">登录</h2>
           <p className="text-xs text-[var(--text-muted)]">请输入你的学生学号与初始密码</p>
         </div>
 

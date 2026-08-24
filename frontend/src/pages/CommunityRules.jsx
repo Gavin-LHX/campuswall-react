@@ -12,13 +12,10 @@ export default function CommunityRules() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <section className="hero-section px-8 py-12 text-center">
-        <div className="hero-content space-y-3">
-          <span className="page-kicker hero-kicker"><i className="bi bi-shield-check" />Community Guidelines</span>
-          <h1 className="text-3xl font-black text-white md:text-4xl">校园墙社区公约</h1>
-          <p className="hero-subtitle mx-auto max-w-xl text-sm">自由表达与彼此尊重可以同时存在，每一位参与者都在共同塑造这里的氛围。</p>
-        </div>
-      </section>
+      <header className="page-header">
+        <h1>社区公约</h1>
+        <p>把墙留成可以安心说话的地方。自由表达，也彼此留余地。</p>
+      </header>
 
       {paused ? (
         <div className="info-callout status-warning">
