@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { createPostgresPool, initMessageSchema } from './postgres.js'
 import { nowText } from './jsonStore.js'
+import { isLostFoundMessage, isLostFoundTag, lostFoundTags, normalizeLostFoundType } from './lostFound.js'
+import { moderationNotifier } from './moderationNotifier.js'
+import { editedPublicationStateFor, publicationStateFor } from './publicationPolicy.js'
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
 const nonNegativeNumber = (value) => {
@@ -57,6 +60,7 @@ export class MessageStore {
     this.messages = new Map()
     this.partitions = new Map()
     this.hotMessages = []
+    this.hotMessagesWithoutLostFound = []
     this.hotTimer = null
     this.messageLocks = new Map()
   }
@@ -64,6 +68,7 @@ export class MessageStore {
   async init() {
     await initMessageSchema(this.pool)
     await this.load()
+    await this.backfillPendingSince()
     this.refreshHotMessages()
     this.hotTimer = setInterval(() => this.refreshHotMessages(), 60 * 60 * 1000)
     this.hotTimer.unref()
@@ -93,6 +98,7 @@ export class MessageStore {
   }
 
   normalizeMessage(message, id) {
+    const hasStoredReviewStatus = Object.hasOwn(message, 'review_status')
     message.id = Number(message.id ?? id)
     message.comments = Array.isArray(message.comments)
       ? message.comments.map(normalizeComment)
@@ -104,8 +110,24 @@ export class MessageStore {
     message.pinned = message.pinned === true
     message.featured = message.featured === true
     message.moderation_status = moderationStatuses.has(message.moderation_status) ? message.moderation_status : 'visible'
-    message.review_status = message.review_status === 'approved' ? 'approved' : 'pending'
-    if (message.moderation_status === 'pending') message.review_status = 'pending'
+    // Messages created before the review workflow existed were already public.
+    // Preserve that state, while every newly-created message stores an explicit
+    // pending review status below in postMessage.
+    message.review_status = hasStoredReviewStatus
+      ? (message.review_status === 'approved' ? 'approved' : 'pending')
+      : (message.moderation_status === 'pending' ? 'pending' : 'approved')
+    if (message.review_status === 'approved') {
+      delete message.review_hold
+      delete message.review_hold_at
+      delete message.review_hold_by
+    }
+    if (message.moderation_status === 'pending') {
+      message.review_status = 'pending'
+      const pendingSince = Date.parse(String(message.pending_since || '').replace(' ', 'T'))
+      if (!Number.isFinite(pendingSince)) delete message.pending_since
+    } else {
+      delete message.pending_since
+    }
     if (message.moderation_status !== 'hidden' && message.moderation_status !== 'deleted') {
       delete message.hidden_reason
       delete message.hidden_at
@@ -120,6 +142,9 @@ export class MessageStore {
     }
     message.poll = normalizePoll(message.poll)
     if (message.user_id !== undefined && message.user_id !== null) message.user_id = Number(message.user_id)
+    if (message.submitted_by_user_id !== undefined && message.submitted_by_user_id !== null) {
+      message.submitted_by_user_id = Number(message.submitted_by_user_id)
+    }
     if (message.anonymous === undefined) message.anonymous = true
     return message
   }
@@ -250,7 +275,7 @@ export class MessageStore {
   }
 
   isPublicMessage(message) {
-    return Boolean(message) && message.moderation_status === 'visible'
+    return Boolean(message) && message.moderation_status === 'visible' && message.review_status === 'approved'
   }
 
   isPublicComment(comment) {
@@ -261,16 +286,16 @@ export class MessageStore {
     return (Array.isArray(message?.comments) ? message.comments : []).filter((comment) => this.isPublicComment(comment))
   }
 
-  reviewStatusCounts() {
-    const messages = this.allMessages().filter((message) => message.moderation_status !== 'deleted')
+  reviewStatusCounts(source = this.allMessages()) {
+    const messages = source.filter((message) => message.moderation_status !== 'deleted')
     return {
       all: messages.length,
       pending: messages.filter((message) => message.review_status !== 'approved').length,
       approved: messages.filter((message) => message.review_status === 'approved').length,
-      visible: messages.filter((message) => message.moderation_status === 'visible').length,
+      visible: messages.filter((message) => this.isPublicMessage(message)).length,
       hidden: messages.filter((message) => message.moderation_status === 'hidden').length,
       awaiting_publication: messages.filter((message) => message.moderation_status === 'pending').length,
-      deleted: this.allMessages().filter((message) => message.moderation_status === 'deleted').length
+      deleted: source.filter((message) => message.moderation_status === 'deleted').length
     }
   }
 
@@ -295,16 +320,106 @@ export class MessageStore {
     return Boolean(target) && this.allMessages().some((message) => this.attachedFiles(message).includes(target))
   }
 
+  async enqueueModerationNotification(message, client, eventType) {
+    if (!moderationNotifier.active) return 0
+    await client.query('SAVEPOINT moderation_notification_outbox')
+    try {
+      const inserted = await moderationNotifier.enqueuePendingPost(message, client, eventType)
+      await client.query('RELEASE SAVEPOINT moderation_notification_outbox')
+      return inserted
+    } catch (error) {
+      await client.query('ROLLBACK TO SAVEPOINT moderation_notification_outbox')
+      await client.query('RELEASE SAVEPOINT moderation_notification_outbox')
+      console.error(`Failed to persist moderation notification event for message ${message?.id || 'unknown'}`)
+      return 0
+    }
+  }
+
+  async backfillPendingSince() {
+    const backfilledAt = new Date().toISOString()
+    for (const [messageId, message] of this.messages.entries()) {
+      if (message.moderation_status !== 'pending' || message.review_status === 'approved' || message.pending_since) continue
+      const next = { ...message, pending_since: backfilledAt }
+      await this.saveMessage(next)
+      this.messages.set(messageId, next)
+    }
+  }
+
+  isFilePubliclyReferenced(filename) {
+    const target = String(filename || '')
+    if (!target) return false
+    return this.allMessages().some((message) => {
+      if (!this.isPublicMessage(message)) return false
+      if ((Array.isArray(message.files) ? message.files : []).includes(target)) return true
+      return (Array.isArray(message.comments) ? message.comments : []).some((comment) => (
+        this.isPublicComment(comment) && (Array.isArray(comment.files) ? comment.files : []).includes(target)
+      ))
+    })
+  }
+
+  isFileGuestAccessible(filename) {
+    const target = String(filename || '')
+    if (!target) return false
+    return this.allMessages().some((message) => {
+      if (!this.isPublicMessage(message) || isLostFoundMessage(message)) return false
+      if ((Array.isArray(message.files) ? message.files : []).includes(target)) return true
+      return (Array.isArray(message.comments) ? message.comments : []).some((comment) => (
+        this.isPublicComment(comment) && (Array.isArray(comment.files) ? comment.files : []).includes(target)
+      ))
+    })
+  }
+
+  isFileReviewable(filename) {
+    const target = String(filename || '')
+    if (!target) return false
+    return this.allMessages().some((message) => (
+      !['hidden', 'deleted'].includes(message.moderation_status)
+      && (Array.isArray(message.files) ? message.files : []).includes(target)
+    ))
+  }
+
+  async expirePendingAttachments(retentionMs, now = Date.now(), messageIds = null) {
+    const cutoff = now - Math.max(0, Number(retentionMs) || 0)
+    const targets = Array.isArray(messageIds) ? new Set(messageIds.map(Number)) : null
+    const candidates = this.allMessages()
+      .filter((message) => !targets || targets.has(Number(message.id)))
+      .filter((message) => message.moderation_status === 'pending' && message.review_status !== 'approved' && (message.files || []).length)
+      .filter((message) => {
+        const pendingSince = Date.parse(String(message.pending_since || '').replace(' ', 'T'))
+        return Number.isFinite(pendingSince) && pendingSince <= cutoff
+      })
+      .map((message) => Number(message.id))
+    const removed = []
+    for (const messageId of candidates) {
+      const result = await this.mutateStoredMessage(messageId, async (message) => {
+        if (message.moderation_status !== 'pending' || message.review_status === 'approved' || !(message.files || []).length) {
+          return { message, result: { success: false, files: [] } }
+        }
+        const pendingSince = Date.parse(String(message.pending_since || '').replace(' ', 'T'))
+        if (!Number.isFinite(pendingSince) || pendingSince > cutoff) return { message, result: { success: false, files: [] } }
+        const next = clone(message)
+        const files = [...next.files]
+        next.files = []
+        next.attachments_expired_at = new Date(now).toISOString()
+        return { message: next, result: { success: true, files } }
+      })
+      if (result?.success) removed.push(...result.files)
+    }
+    return [...new Set(removed)]
+  }
+
   getMessage(id, likeList = [], dislikeList = []) {
     const message = this.messages.get(Number(id))
     return message ? this.withLikeState(message, likeList, dislikeList) : null
   }
 
-  getMessages({ likeList = [], dislikeList = [], sort = 'newest', word = '', filterType = 'all', includeHidden = false, includeDeleted = false } = {}) {
+  getMessages({ likeList = [], dislikeList = [], sort = 'newest', word = '', tag = '', filterType = 'all', includeHidden = false, includeDeleted = false } = {}) {
     let items = this.allMessages().map((item) => clone(item))
     if (!includeDeleted) items = items.filter((item) => item.moderation_status !== 'deleted')
     if (!includeHidden) items = items.filter((item) => this.isPublicMessage(item))
-    if (word) items = items.filter((item) => `${item.text || ''} ${item.poll?.question || ''}`.includes(word))
+    const exactTag = String(tag || '').trim()
+    if (exactTag) items = items.filter((item) => Array.isArray(item.tags) && item.tags.includes(exactTag))
+    if (word) items = items.filter((item) => `${item.text || ''} ${item.poll?.question || ''} ${(item.tags || []).join(' ')}`.includes(word))
     if (filterType === 'files') items = items.filter((item) => Array.isArray(item.files) && item.files.length > 0)
     if (filterType === 'polls') items = items.filter((item) => Boolean(item.poll))
     const compareContent = (a, b) => {
@@ -550,15 +665,17 @@ export class MessageStore {
     })
   }
 
-  async postMessage({ text = '', files = [], tags = [], user = null, anonymous = true, poll = null, requireApproval = false }) {
-    const cleanTags = normalizeTags(tags)
+  async postMessage({ text = '', files = [], tags = [], user = null, admin = null, anonymous = true, poll = null, lostFound = null }) {
+    const cleanTags = [...new Set(normalizeTags(tags))]
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const id = this.createId()
       const partitions = cleanTags.map((tag) => this.findPartition(tag)).filter(Boolean)
-      const isAnonymous = user ? anonymous !== false : true
+      const isAnonymous = admin ? false : (user ? anonymous !== false : true)
+      const createdAt = nowText()
+      const publication = publicationStateFor({ tags: cleanTags, user, admin, lostFound })
       const message = {
         id,
-        timestamp: nowText(),
+        timestamp: createdAt,
         text,
         files,
         likes: 0,
@@ -566,13 +683,26 @@ export class MessageStore {
         tags: cleanTags,
         comments: [],
         partitions,
-        moderation_status: requireApproval ? 'pending' : 'visible',
-        review_status: 'pending'
+        moderation_status: publication.moderation_status,
+        review_status: publication.review_status,
+        review_revision: 1,
+        author_type: admin ? 'admin' : (user ? 'student' : 'guest'),
+        anonymous: isAnonymous
       }
+      if (publication.moderation_status === 'pending') message.pending_since = createdAt
       const normalizedPoll = normalizePoll(poll)
       if (normalizedPoll) message.poll = normalizedPoll
-      if (user) {
+      if (lostFound && typeof lostFound === 'object') message.lost_found = clone(lostFound)
+      if (admin) {
+        message.admin_username = String(admin.username || '').trim().slice(0, 100)
+        if (Number.isSafeInteger(Number(admin.userId)) && Number(admin.userId) > 0) {
+          message.submitted_by_user_id = Number(admin.userId)
+        }
+        message.display_name_snapshot = String(admin.displayName || '校园墙管理员').trim().slice(0, 100) || '校园墙管理员'
+        message.official = true
+      } else if (user) {
         message.user_id = Number(user.id)
+        message.submitted_by_user_id = Number(user.id)
         message.username = user.username
         message.anonymous = isAnonymous
         message.display_name_snapshot = isAnonymous ? '匿名用户' : (user.nickname || `用户${user.id}`)
@@ -587,6 +717,9 @@ export class MessageStore {
           continue
         }
         for (const partition of partitions) await this.savePartition(partition, id, client)
+        if (message.moderation_status === 'pending') {
+          await this.enqueueModerationNotification(message, client, 'message.created_pending')
+        }
         await client.query('COMMIT')
       } catch (error) {
         await client.query('ROLLBACK')
@@ -598,6 +731,7 @@ export class MessageStore {
       this.messages.set(id, message)
       for (const partition of partitions) this.setPartitionInMemory(partition, id)
       this.refreshHotMessages()
+      if (message.moderation_status === 'pending') moderationNotifier.kick()
       return id
     }
     throw new Error('Could not allocate a unique message id')
@@ -608,7 +742,7 @@ export class MessageStore {
   }
 
   unavailableMessageResult(message, action = '互动') {
-    const pending = message?.moderation_status === 'pending'
+    const pending = message?.moderation_status === 'pending' || message?.review_status !== 'approved'
     return {
       success: false,
       error: pending ? `留言尚未通过审核，暂时不能${action}` : `留言已下架，暂时不能${action}`,
@@ -659,11 +793,10 @@ export class MessageStore {
     return result || { success: false, error: 'Message not found' }
   }
 
-  async updateOwnedMessage({ id, userId, text = '', tags = [], anonymous = true, displayName = '', requireApproval = false }) {
+  async updateOwnedMessage({ id, userId, user = null, text = '', tags = [], anonymous = true, displayName = '' }) {
     const messageId = Number(id)
     const ownerId = Number(userId)
-    const cleanTags = [...new Set(normalizeTags(tags))]
-    const partitions = [...new Set(cleanTags.map((tag) => this.findPartition(tag)).filter(Boolean))]
+    const requestedTags = [...new Set(normalizeTags(tags))]
     const result = await this.mutateStoredMessage(messageId, async (message, client) => {
       if (Number(message.user_id) !== ownerId) {
         return { message, result: { success: false, error: '留言不存在或不属于当前账号', code: 'FORBIDDEN' } }
@@ -671,6 +804,15 @@ export class MessageStore {
       if (message.moderation_status === 'deleted') {
         return { message, result: { success: false, error: '留言已删除，不能继续编辑', code: 'MESSAGE_DELETED' } }
       }
+      let cleanTags = requestedTags
+      if (isLostFoundMessage(message)) {
+        const kind = normalizeLostFoundType(message.lost_found?.kind) || 'lost'
+        const statusTag = message.lost_found?.resolved === true ? '已找回' : (kind === 'found' ? '待认领' : '待找回')
+        const lostFoundStatusTags = new Set(['待找回', '待认领', '已找回'])
+        const customTags = requestedTags.filter((tag) => !isLostFoundTag(tag) && !lostFoundStatusTags.has(tag))
+        cleanTags = [...new Set([...lostFoundTags(kind), statusTag, ...customTags])]
+      }
+      const partitions = [...new Set(cleanTags.map((tag) => this.findPartition(tag)).filter(Boolean))]
       const next = clone(message)
       next.text = String(text || '').trim()
       next.tags = cleanTags
@@ -679,18 +821,30 @@ export class MessageStore {
       next.display_name_snapshot = next.anonymous ? '匿名用户' : (String(displayName || '').trim() || `用户${ownerId}`)
       next.edited_at = nowText()
       next.edit_count = Math.max(Number(next.edit_count) || 0, 0) + 1
-      next.review_status = 'pending'
+      next.review_revision = Math.max(Number(next.review_revision) || 1, 1) + 1
       delete next.reviewed_at
       delete next.reviewed_by
-      if (next.moderation_status !== 'hidden') next.moderation_status = requireApproval ? 'pending' : 'visible'
+      const publication = editedPublicationStateFor({ message, tags: cleanTags, user, lostFound: message.lost_found })
+      next.review_status = publication.review_status
+      if (publication.moderation_status === 'pending') {
+        next.pending_since = new Date().toISOString()
+        if (next.moderation_status !== 'hidden') next.moderation_status = 'pending'
+      } else {
+        delete next.pending_since
+        if (next.moderation_status !== 'hidden') next.moderation_status = 'visible'
+      }
 
       await client.query('DELETE FROM partitions WHERE message_id = $1', [messageId])
       for (const partition of partitions) await this.savePartition(partition, messageId, client)
+      if (next.moderation_status === 'pending') {
+        await this.enqueueModerationNotification(next, client, 'message.edited_pending')
+      }
       return { message: next, result: { success: true, message: clone(next) } }
     })
     if (result?.success) {
       this.replaceMessagePartitionsInMemory(messageId, result.message.partitions || result.message.tags)
       this.refreshHotMessages()
+      if (result.message?.moderation_status === 'pending') moderationNotifier.kick()
     }
     return result || { success: false, error: '留言不存在', code: 'NOT_FOUND' }
   }
@@ -856,8 +1010,8 @@ export class MessageStore {
     return result || { success: false, error: 'Message not found', code: 'NOT_FOUND' }
   }
 
-  async setModerationState(id, { pinned, featured, hidden, hiddenReason = '', requireApproval = false }) {
-    const result = await this.mutateStoredMessage(id, async (message) => {
+  async setModerationState(id, { pinned, featured, hidden, hiddenReason = '' }) {
+    const result = await this.mutateStoredMessage(id, async (message, client) => {
       if (message.moderation_status === 'deleted') {
         return { message, result: { success: false, error: '留言位于回收站，请先恢复', code: 'MESSAGE_DELETED' } }
       }
@@ -869,15 +1023,22 @@ export class MessageStore {
       }
       if (typeof featured === 'boolean') next.featured = featured
       if (typeof hidden === 'boolean') {
+        const previousModerationStatus = next.moderation_status
         next.moderation_status = hidden
           ? 'hidden'
-          : (next.review_status === 'approved' || !requireApproval ? 'visible' : 'pending')
+          : (next.review_status === 'approved' ? 'visible' : 'pending')
         if (hidden) {
           next.hidden_reason = String(hiddenReason || '违反社区规范').trim().slice(0, 200) || '违反社区规范'
           next.hidden_at = new Date().toISOString()
         } else {
           delete next.hidden_reason
           delete next.hidden_at
+          const becamePending = previousModerationStatus !== 'pending' && next.moderation_status === 'pending'
+          if (becamePending) {
+            next.pending_since = new Date().toISOString()
+            next.review_revision = Math.max(Number(next.review_revision) || 1, 1) + 1
+            await this.enqueueModerationNotification(next, client, 'message.unhidden_pending')
+          }
         }
       }
       return {
@@ -885,35 +1046,57 @@ export class MessageStore {
         result: { success: true, message: clone(next) }
       }
     })
-    if (result?.success) this.refreshHotMessages()
+    if (result?.success) {
+      this.refreshHotMessages()
+      if (result.message?.moderation_status === 'pending') moderationNotifier.kick()
+    }
     return result || { success: false, error: '消息不存在' }
   }
 
-  async setReviewState(id, { approved, reviewer = '', requireApproval = false }) {
-    const result = await this.mutateStoredMessage(id, async (message) => {
+  async setReviewState(id, { approved, reviewer = '' }) {
+    const result = await this.mutateStoredMessage(id, async (message, client) => {
       if (message.moderation_status === 'deleted') {
         return { message, result: { success: false, error: '留言位于回收站，请先恢复', code: 'MESSAGE_DELETED' } }
       }
       const next = clone(message)
       if (approved) {
         next.review_status = 'approved'
-        next.moderation_status = 'visible'
+        delete next.pending_since
+        delete next.review_hold
+        delete next.review_hold_at
+        delete next.review_hold_by
+        if (next.moderation_status !== 'hidden') next.moderation_status = 'visible'
         next.reviewed_at = new Date().toISOString()
         next.reviewed_by = String(reviewer || '').trim().slice(0, 100)
-        delete next.hidden_reason
-        delete next.hidden_at
+        if (next.moderation_status !== 'hidden') {
+          delete next.hidden_reason
+          delete next.hidden_at
+          delete next.hidden_by
+        }
       } else {
+        if (message.review_status !== 'approved' && message.moderation_status === 'pending') {
+          return { message, result: { success: true, message: clone(message), changed: false } }
+        }
         next.review_status = 'pending'
+        next.pending_since = new Date().toISOString()
+        next.review_revision = Math.max(Number(next.review_revision) || 1, 1) + 1
+        next.review_hold = true
+        next.review_hold_at = new Date().toISOString()
+        next.review_hold_by = String(reviewer || '').trim().slice(0, 100)
         delete next.reviewed_at
         delete next.reviewed_by
-        if (next.moderation_status !== 'hidden') next.moderation_status = requireApproval ? 'pending' : 'visible'
+        if (next.moderation_status !== 'hidden') next.moderation_status = 'pending'
+        await this.enqueueModerationNotification(next, client, 'message.returned_pending')
       }
       return {
         message: next,
         result: { success: true, message: clone(next) }
       }
     })
-    if (result?.success) this.refreshHotMessages()
+    if (result?.success) {
+      this.refreshHotMessages()
+      if (!approved) moderationNotifier.kick()
+    }
     return result || { success: false, error: '消息不存在' }
   }
 
@@ -927,6 +1110,7 @@ export class MessageStore {
       const result = await this.mutateStoredMessage(messageId, async (message) => {
         const next = clone(message)
         next.review_status = 'approved'
+        delete next.pending_since
         if (next.moderation_status !== 'hidden') next.moderation_status = 'visible'
         next.reviewed_at = item?.timestamp || new Date().toISOString()
         next.reviewed_by = String(item?.by || 'legacy').slice(0, 100)
@@ -939,20 +1123,9 @@ export class MessageStore {
   }
 
   async releasePendingMessages() {
-    const pendingIds = this.allMessages()
-      .filter((message) => message.moderation_status === 'pending')
-      .map((message) => Number(message.id))
-    const released = []
-    for (const messageId of pendingIds) {
-      const result = await this.mutateStoredMessage(messageId, async (message) => {
-        const next = clone(message)
-        next.moderation_status = 'visible'
-        return { message: next, result: { success: true, message: clone(next) } }
-      })
-      if (result?.success) released.push(result.message)
-    }
-    if (released.length) this.refreshHotMessages()
-    return released
+    // Kept for API compatibility. Content that is actually pending can only
+    // become public through setReviewState(..., { approved: true }).
+    return []
   }
 
   async deleteMessage(id, { deletedBy = '', reason = '管理员删除', origin = 'admin' } = {}) {
@@ -996,14 +1169,19 @@ export class MessageStore {
   }
 
   async restoreMessage(id, { restoredBy = '' } = {}) {
-    const result = await this.mutateStoredMessage(id, async (message) => {
+    const result = await this.mutateStoredMessage(id, async (message, client) => {
       if (message.moderation_status !== 'deleted') {
         return { message, result: { success: false, error: '留言不在回收站中', code: 'NOT_DELETED' } }
       }
       const next = clone(message)
       const previousStatus = ['pending', 'visible', 'hidden'].includes(next.deleted_from_status) ? next.deleted_from_status : 'hidden'
-      next.moderation_status = previousStatus
-      if (previousStatus !== 'hidden') {
+      next.moderation_status = previousStatus === 'visible' && next.review_status !== 'approved' ? 'pending' : previousStatus
+      if (next.moderation_status === 'pending') {
+        next.pending_since = new Date().toISOString()
+        next.review_revision = Math.max(Number(next.review_revision) || 1, 1) + 1
+        await this.enqueueModerationNotification(next, client, 'message.restored_pending')
+      }
+      if (next.moderation_status !== 'hidden') {
         delete next.hidden_reason
         delete next.hidden_at
         delete next.hidden_by
@@ -1017,7 +1195,10 @@ export class MessageStore {
       delete next.deleted_from_status
       return { message: next, result: { success: true, message: clone(next) } }
     })
-    if (result?.success) this.refreshHotMessages()
+    if (result?.success) {
+      this.refreshHotMessages()
+      if (result.message?.moderation_status === 'pending') moderationNotifier.kick()
+    }
     return result || { success: false, error: '留言不存在', code: 'NOT_FOUND' }
   }
 
@@ -1168,14 +1349,17 @@ export class MessageStore {
   }
 
   refreshHotMessages() {
-    this.hotMessages = this.allMessages().filter((message) => this.isPublicMessage(message)).map((item) => clone(item)).sort((a, b) => (
+    const ranked = this.allMessages().filter((message) => this.isPublicMessage(message)).map((item) => clone(item)).sort((a, b) => (
       Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || this.scoreMessage(b) - this.scoreMessage(a)
-    )).slice(0, 20)
+    ))
+    this.hotMessages = ranked.slice(0, 20)
+    this.hotMessagesWithoutLostFound = ranked.filter((message) => !isLostFoundMessage(message)).slice(0, 20)
     return this.hotMessages
   }
 
-  getHotMessages(likeList = [], dislikeList = []) {
-    return this.hotMessages.filter((message) => this.isPublicMessage(message)).map((item) => this.withLikeState(item, likeList, dislikeList))
+  getHotMessages(likeList = [], dislikeList = [], { includeLostFound = true } = {}) {
+    const messages = includeLostFound ? this.hotMessages : this.hotMessagesWithoutLostFound
+    return messages.filter((message) => this.isPublicMessage(message)).map((item) => this.withLikeState(item, likeList, dislikeList))
   }
 }
 

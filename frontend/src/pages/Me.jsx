@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import api from '../services/api'
 import { useAlert } from '../contexts/AlertContext.jsx'
 import { useUser } from '../contexts/UserContext.jsx'
-import { genderText } from '../utils/user'
+import { genderText, getAvatarUrl } from '../utils/user'
+
+const avatarTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+const maxAvatarBytes = 5 * 1024 * 1024
 
 export default function Me() {
   const { user, loading, logout, refreshMe, setUser, notificationUnread } = useUser()
@@ -11,6 +14,7 @@ export default function Me() {
   const [gender, setGender] = useState(0)
   const [bio, setBio] = useState('')
   const [avatarFile, setAvatarFile] = useState(null)
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState('')
   const [avatarStamp, setAvatarStamp] = useState(Date.now())
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -20,6 +24,7 @@ export default function Me() {
   const [passwordSaving, setPasswordSaving] = useState(false)
   const navigate = useNavigate()
   const alert = useAlert()
+  const avatarInputRef = useRef(null)
 
   useEffect(() => {
     if (user) {
@@ -28,6 +33,16 @@ export default function Me() {
       setBio(user.bio || '')
     }
   }, [user])
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreviewUrl('')
+      return undefined
+    }
+    const previewUrl = URL.createObjectURL(avatarFile)
+    setAvatarPreviewUrl(previewUrl)
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [avatarFile])
 
   if (loading) {
     return (
@@ -67,13 +82,35 @@ export default function Me() {
         setUser(response.data.user)
         setAvatarStamp(Date.now())
         setAvatarFile(null)
-        alert.showTopRightAlert('新头像上传成功！', 'success', '成功')
+        if (avatarInputRef.current) avatarInputRef.current.value = ''
+        alert.showTopRightAlert('头像已自动居中裁剪并压缩', 'success', '更换成功')
       }
     } catch (error) {
       alert.showTopRightAlert(error.message, 'warning', '上传失败')
     } finally {
       setUploading(false)
     }
+  }
+
+  const selectAvatar = (event) => {
+    const file = event.target.files?.[0] || null
+    if (!file) {
+      setAvatarFile(null)
+      return
+    }
+    if (file.type && !avatarTypes.has(file.type)) {
+      event.target.value = ''
+      setAvatarFile(null)
+      alert.showTopRightAlert('仅支持 PNG、JPEG、GIF 或 WebP 图片', 'warning', '格式不支持')
+      return
+    }
+    if (file.size > maxAvatarBytes) {
+      event.target.value = ''
+      setAvatarFile(null)
+      alert.showTopRightAlert('头像文件不能超过 5MB', 'warning', '文件过大')
+      return
+    }
+    setAvatarFile(file)
   }
 
   const changePassword = async (event) => {
@@ -122,7 +159,7 @@ export default function Me() {
             <div className="relative shrink-0">
               <img
                 className="profile-avatar h-28 w-28 md:h-32 md:md:w-32 rounded-full object-cover shadow-lg"
-                src={`${user.avatar_url}?v=${avatarStamp}`}
+                src={`${getAvatarUrl(user.id, user.avatar_url)}?v=${avatarStamp}`}
                 alt={user.nickname}
               />
               <span className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs border-2 border-white shadow">
@@ -134,7 +171,7 @@ export default function Me() {
               <div className="flex items-center gap-2">
                 <span className="page-kicker text-xs">
                   <i className="bi bi-person-fill" />
-                  <span>已登录认证学生</span>
+                  <span>已登录校园用户</span>
                 </span>
               </div>
               <h1 className="text-2xl md:text-3xl font-black text-[var(--text-primary)]">
@@ -143,7 +180,7 @@ export default function Me() {
               <div className="profile-meta-grid">
                 <span>
                   <i className="bi bi-person-badge text-[var(--primary-color)]" />
-                  <span>学号：{user.username}</span>
+                  <span>用户名：{user.username}</span>
                 </span>
                 <span>
                   <i className="bi bi-gender-ambiguous text-amber-500" />
@@ -207,7 +244,6 @@ export default function Me() {
               <span>Settings</span>
             </span>
             <h2 className="text-xl font-bold text-[var(--text-primary)]">个人资料设置</h2>
-            <p className="text-xs text-[var(--text-muted)]">更新你的公开展示昵称、个人简介与性别属性</p>
           </div>
 
           <label className="block space-y-1.5">
@@ -250,7 +286,7 @@ export default function Me() {
 
           <div className="rounded-xl border border-[var(--border-color)] bg-[var(--card-secondary-bg)] p-4 text-xs text-[var(--text-secondary)] leading-relaxed">
             <i className="bi bi-info-circle-fill text-[var(--primary-color)] mr-1.5" />
-            学号为唯一身份凭证，不可自行修改。发帖时可选择匿名或使用上述昵称，不公开真实姓名。
+            用户名是你的登录标识，暂不支持自行修改。发帖时可选择匿名或使用上述昵称。
           </div>
 
           <button className="btn btn-primary px-6" type="submit" disabled={saving}>
@@ -268,20 +304,32 @@ export default function Me() {
                 <span>Avatar</span>
               </span>
               <h2 className="text-xl font-bold text-[var(--text-primary)]">头像管理</h2>
-              <p className="text-xs text-[var(--text-muted)]">支持 png, jpg, gif 或 webp 格式</p>
+              <p className="text-xs text-[var(--text-muted)]">自动居中裁剪为正方形并压缩，最大 5MB</p>
             </div>
 
             <label className="upload-dropzone flex min-h-36 cursor-pointer flex-col items-center justify-center p-4 text-center">
-              <i className="bi bi-cloud-arrow-up-fill text-3xl text-[var(--primary-color)] mb-2" />
+              {avatarPreviewUrl ? (
+                <img
+                  className="mb-3 h-20 w-20 rounded-2xl border border-[var(--border-color)] object-cover shadow-sm"
+                  src={avatarPreviewUrl}
+                  alt="头像居中裁剪预览"
+                />
+              ) : (
+                <i className="bi bi-cloud-arrow-up-fill text-3xl text-[var(--primary-color)] mb-2" />
+              )}
               <p className="text-xs font-bold text-[var(--text-primary)]">
                 {avatarFile ? avatarFile.name : '点击选择新头像图片'}
               </p>
-              <p className="text-[0.7rem] text-[var(--text-muted)] mt-1">推荐使用正方形尺寸图片</p>
+              <p className="text-[0.7rem] text-[var(--text-muted)] mt-1">
+                {avatarFile ? '预览为中心裁剪效果' : 'GIF 将取首帧作为静态头像'}
+              </p>
               <input
                 hidden
+                ref={avatarInputRef}
                 type="file"
+                disabled={uploading}
                 accept="image/png,image/jpeg,image/gif,image/webp"
-                onChange={(event) => setAvatarFile(event.target.files?.[0] || null)}
+                onChange={selectAvatar}
               />
             </label>
           </div>

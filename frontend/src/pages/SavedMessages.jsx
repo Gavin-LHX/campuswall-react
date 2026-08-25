@@ -65,7 +65,7 @@ export default function SavedMessages() {
           </span>
           <h1 className="text-3xl font-black text-[var(--text-primary)]">我的收藏</h1>
           <p className="max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
-            收藏会跟随你的学生账号保存，换设备登录后也能继续查看。
+            收藏会跟随你的校园账号保存，换设备登录后也能继续查看。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

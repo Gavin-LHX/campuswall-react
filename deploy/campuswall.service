@@ -1,0 +1,35 @@
+[Unit]
+Description=Campus Wall API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=campuswall
+Group=campuswall
+WorkingDirectory=/opt/campus-wall/backend
+EnvironmentFile=/etc/campus-wall/backend.env
+Environment=NODE_ENV=production
+ExecStartPre=/usr/local/lib/campuswall/node scripts/wait-for-postgres.js
+ExecStart=/usr/local/lib/campuswall/node src/server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=45
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+LockPersonality=true
+LimitNOFILE=65535
+TasksMax=256
+MemoryMax=1536M
+
+[Install]
+WantedBy=multi-user.target

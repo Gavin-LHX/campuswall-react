@@ -1,27 +1,79 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import AdminShell from '../../components/AdminShell.jsx'
 import Modal from '../../components/Modal.jsx'
 import { useAlert } from '../../contexts/AlertContext.jsx'
 import api from '../../services/api'
+import { fileType, fileUrl } from '../../utils/user.js'
 
 const statusOptions = [
   { value: 'pending', label: '待审核', count: 'pending', icon: 'bi-hourglass-split' },
+  { value: 'approved', label: '已通过', count: 'approved', icon: 'bi-check-circle' },
   { value: 'awaiting_publication', label: '待公开', count: 'awaiting_publication', icon: 'bi-eye-slash' },
   { value: 'visible', label: '公开中', count: 'visible', icon: 'bi-eye' },
   { value: 'hidden', label: '已下架', count: 'hidden', icon: 'bi-archive' },
   { value: 'all', label: '全部', count: 'all', icon: 'bi-collection' }
 ]
 
+const queueConfigs = Object.freeze({
+  posts: Object.freeze({ title: '帖子审核', item: '帖子', unit: '条', icon: 'bi-chat-quote' }),
+  confessions: Object.freeze({ title: '表白墙审核', item: '便签', unit: '张', icon: 'bi-heart' })
+})
+
 function BoundUser({ message }) {
-  if (!message?.user_id) return <span className="text-muted">游客/旧留言</span>
+  if (message?.identity_redacted || message?.review_identity_redacted || message?.author_redacted) {
+    return <span className="text-muted"><i className="bi bi-eye-slash mr-1" />发布者身份已隐藏，审核时只需判断内容是否符合社区规范</span>
+  }
+  if (message?.official || message?.author_type === 'admin') {
+    return <span className="badge"><i className="bi bi-patch-check-fill" />官方账号发布{message.admin_username ? ` · ${message.admin_username}` : ''}</span>
+  }
+  if (!message?.user_id) return <span className="text-muted">匿名或未登录发布（审核页不展示可识别身份）</span>
   return (
     <div className="flex flex-wrap gap-2 text-sm">
       <span className="badge">{message.anonymous === false ? '非匿名' : '匿名'}</span>
-      <span className="badge">学号：{message.user?.username || message.username || '-'}</span>
-      <span className="badge">姓名：{message.user?.real_name || '-'}</span>
+      <span className="badge">用户名：{message.user?.username || message.username || '-'}</span>
       <span className="badge">昵称：{message.user?.nickname || message.display_name_snapshot || '-'}</span>
       <span className="badge">状态：{message.user?.status || '-'}</span>
     </div>
+  )
+}
+
+const formatTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const attachmentName = (file) => typeof file === 'string' ? file : (file?.filename || file?.name || '')
+const tagNames = (message) => {
+  const values = Array.isArray(message?.tags) ? message.tags : String(message?.tags || '').split(',')
+  return values.map((tag) => typeof tag === 'string' ? tag : (tag?.tag || tag?.name || '')).map((tag) => tag.trim()).filter(Boolean)
+}
+
+function AttachmentList({ files = [], itemLabel = '帖子' }) {
+  const normalized = files.map(attachmentName).filter(Boolean)
+  if (!normalized.length) return null
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-bold">附件（{normalized.length}）</h3>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {normalized.map((file, index) => {
+          const type = fileType(file)
+          const url = fileUrl(file)
+          return type === 'image' ? (
+            <a className="block overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--card-secondary-bg)]" href={url} target="_blank" rel="noreferrer" key={`${file}-${index}`}>
+              <img className="aspect-square w-full object-cover" src={fileUrl(file, true)} alt={`${itemLabel}附件 ${index + 1}`} loading="lazy" />
+              <span className="block truncate p-2 text-xs">查看原图</span>
+            </a>
+          ) : (
+            <a className="card-flat flex min-h-24 flex-col items-center justify-center gap-2 p-3 text-center text-sm" href={url} target="_blank" rel="noreferrer" key={`${file}-${index}`}>
+              <i className={`bi ${type === 'video' ? 'bi-play-btn' : type === 'audio' ? 'bi-music-note-beamed' : 'bi-file-earmark'} text-2xl text-[var(--primary-color)]`} />
+              <span className="max-w-full truncate">{file}</span>
+            </a>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -38,13 +90,19 @@ function ReviewBadge({ message }) {
   return <span className="badge status-warning"><i className="bi bi-clock-history" />待复核 · 已公开</span>
 }
 
-export default function AdminWall() {
+export default function AdminWall({ scope = 'posts' }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const queue = queueConfigs[scope] || queueConfigs.posts
+  const isConfessionQueue = scope === 'confessions'
+  const initialStatus = new URLSearchParams(location.search).get('status')
   const [messages, setMessages] = useState([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [counts, setCounts] = useState({ all: 0, pending: 0, approved: 0, visible: 0, hidden: 0, awaiting_publication: 0 })
-  const [status, setStatus] = useState('pending')
+  const [scopeCounts, setScopeCounts] = useState({ posts: { pending: 0 }, confessions: { pending: 0 } })
+  const [status, setStatus] = useState(statusOptions.some((option) => option.value === initialStatus) ? initialStatus : 'pending')
   const [query, setQuery] = useState('')
   const [appliedQuery, setAppliedQuery] = useState('')
   const [loading, setLoading] = useState(false)
@@ -54,28 +112,88 @@ export default function AdminWall() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [hideTarget, setHideTarget] = useState(null)
   const [hideReason, setHideReason] = useState('违反社区规范')
+  const [canManage, setCanManage] = useState(false)
+  const loadRequestRef = useRef(0)
+  const detailRequestRef = useRef(0)
   const alert = useAlert()
+  const visibleStatusOptions = canManage
+    ? statusOptions
+    : statusOptions.filter((option) => ['pending', 'approved', 'awaiting_publication'].includes(option.value))
+
+  useEffect(() => {
+    let alive = true
+    api.adminVerify().then((response) => {
+      const permissions = (response.data?.admin?.permissions || []).map((permission) => permission.name)
+      if (alive) setCanManage(permissions.includes('manage_wall_message'))
+    }).catch(() => {
+      if (alive) setCanManage(false)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const load = async () => {
+    const requestId = ++loadRequestRef.current
+    setSelectedIds([])
     setLoading(true)
     try {
-      const response = await api.adminGetMessages({ q: appliedQuery, page, status })
+      const response = await api.adminGetMessages({ q: appliedQuery, page, status, scope })
+      if (requestId !== loadRequestRef.current) return
       const data = response.data || {}
       setMessages(data.messages || [])
       setTotal(data.total || 0)
       setTotalPages(data.total_pages || 0)
       setCounts((current) => ({ ...current, ...(data.counts || {}) }))
+      setScopeCounts((current) => ({
+        posts: { ...current.posts, ...(data.scope_counts?.posts || {}) },
+        confessions: { ...current.confessions, ...(data.scope_counts?.confessions || {}) }
+      }))
       setSelectedIds([])
     } catch (error) {
-      alert.showTopRightAlert(error.message, 'warning', '留言加载失败')
+      if (requestId === loadRequestRef.current) alert.showTopRightAlert(error.message, 'warning', `${queue.item}加载失败`)
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestRef.current) setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [page, status, appliedQuery])
+  useEffect(() => { load() }, [page, status, appliedQuery, scope])
 
-  const allPageSelected = messages.length > 0 && messages.every((message) => selectedIds.includes(message.id))
+  useEffect(() => {
+    setPage(1)
+    setSelectedIds([])
+    setSelected(null)
+  }, [scope])
+
+  useEffect(() => () => {
+    loadRequestRef.current += 1
+    detailRequestRef.current += 1
+  }, [])
+
+  useEffect(() => {
+    const messageId = Number(new URLSearchParams(location.search).get('message'))
+    if (!Number.isSafeInteger(messageId) || messageId <= 0) return undefined
+    let alive = true
+    api.adminGetMessage(messageId).then((response) => {
+      if (!alive) return
+      const message = response.data?.message || response.data?.data || response.data
+      const targetScope = message?.moderation_scope === 'confessions' ? 'confessions' : 'posts'
+      if (targetScope !== scope) {
+        const search = new URLSearchParams(location.search)
+        navigate(`${targetScope === 'confessions' ? '/admin/confessions' : '/admin/wall'}?${search.toString()}`, { replace: true })
+        return
+      }
+      setSelected(message)
+    }).catch((error) => {
+      if (alive) alert.showTopRightAlert(error.message, 'warning', `待审核${queue.item}加载失败`)
+    })
+    return () => {
+      alive = false
+    }
+  }, [location.search, navigate, queue.item, scope])
+
+  const selectableMessages = useMemo(() => messages, [messages])
+  const allPageSelected = selectableMessages.length > 0 && selectableMessages.every((message) => selectedIds.includes(message.id))
   const selectedMessages = useMemo(
     () => messages.filter((message) => selectedIds.includes(message.id)),
     [messages, selectedIds]
@@ -97,7 +215,7 @@ export default function AdminWall() {
   }
 
   const togglePageSelection = () => {
-    setSelectedIds(allPageSelected ? [] : messages.map((message) => message.id))
+    setSelectedIds(allPageSelected ? [] : selectableMessages.map((message) => message.id))
   }
 
   const review = async (message, action) => {
@@ -105,10 +223,12 @@ export default function AdminWall() {
     try {
       const response = await api.adminReviewMessage(message.id, action)
       if (!response.data?.success) throw new Error(response.data?.error || '审核失败')
-      alert.showTopRightAlert(action === 'approve' ? '留言已通过审核' : '留言已退回待审', 'success', '审核状态已更新')
+      alert.showTopRightAlert(action === 'approve' ? `${queue.item}已通过审核` : `${queue.item}已退回待审`, 'success', '审核状态已更新')
       await load()
+      return true
     } catch (error) {
       alert.showTopRightAlert(error.message, 'warning', '审核失败')
+      return false
     } finally {
       setBusy(false)
     }
@@ -121,7 +241,7 @@ export default function AdminWall() {
       const response = await api.adminBulkModerateMessages({ message_ids: selectedIds, action, ...extra })
       const data = response.data || {}
       if (!data.success) throw new Error(data.error || '批量操作失败')
-      alert.showTopRightAlert(`成功处理 ${data.succeeded || 0} 条留言`, data.failed ? 'warning' : 'success', data.failed ? '部分完成' : '操作完成')
+      alert.showTopRightAlert(`成功处理 ${data.succeeded || 0} ${queue.unit}${queue.item}`, data.failed ? 'warning' : 'success', data.failed ? '部分完成' : '操作完成')
       setHideTarget(null)
       await load()
     } catch (error) {
@@ -138,7 +258,7 @@ export default function AdminWall() {
       const response = await api.adminDeleteMessage(deleteTarget.id)
       if (!response.data?.success) throw new Error(response.data?.error || '删除失败')
       setDeleteTarget(null)
-      alert.showTopRightAlert('留言已移入回收站', 'success', '操作完成')
+      alert.showTopRightAlert(`${queue.item}已移入回收站`, 'success', '操作完成')
       await load()
     } catch (error) {
       alert.showTopRightAlert(error.message, 'warning', '删除失败')
@@ -155,7 +275,7 @@ export default function AdminWall() {
       const updated = response.data.message
       setMessages((items) => items.map((item) => item.id === message.id ? { ...item, ...updated } : item))
       setSelected((item) => item?.id === message.id ? { ...item, ...updated } : item)
-      alert.showTopRightAlert('留言管理状态已更新', 'success', '操作完成')
+      alert.showTopRightAlert(`${queue.item}管理状态已更新`, 'success', '操作完成')
       await load()
     } catch (error) {
       alert.showTopRightAlert(error.message, 'warning', '更新失败')
@@ -165,11 +285,13 @@ export default function AdminWall() {
   }
 
   const detail = async (message) => {
+    const requestId = ++detailRequestRef.current
     try {
       const response = await api.adminGetMessage(message.id)
-      setSelected(response.data)
+      if (requestId !== detailRequestRef.current) return
+      setSelected(response.data?.message || response.data?.data || response.data)
     } catch (error) {
-      alert.showTopRightAlert(error.message, 'warning', '详情加载失败')
+      if (requestId === detailRequestRef.current) alert.showTopRightAlert(error.message, 'warning', '详情加载失败')
     }
   }
 
@@ -198,14 +320,22 @@ export default function AdminWall() {
   }
 
   return (
-    <AdminShell title="留言管理">
-      <div className="mb-5 flex flex-wrap gap-2" role="tablist" aria-label="审核队列筛选">
-        {statusOptions.map((option) => (
+    <AdminShell title={queue.title}>
+      <nav className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="审核内容分类">
+        <NavLink className={({ isActive }) => `btn justify-center ${isActive ? 'btn-primary' : 'btn-outline'}`} to="/admin/wall" end>
+          <i className="bi bi-chat-quote" />帖子审核<span className="badge">{scopeCounts.posts.pending || 0}</span>
+        </NavLink>
+        <NavLink className={({ isActive }) => `btn justify-center ${isActive ? 'btn-primary' : 'btn-outline'}`} to="/admin/confessions" end>
+          <i className="bi bi-heart" />表白墙审核<span className="badge">{scopeCounts.confessions.pending || 0}</span>
+        </NavLink>
+      </nav>
+
+      <div className="mb-5 flex flex-wrap gap-2" role="group" aria-label="审核状态筛选">
+        {visibleStatusOptions.map((option) => (
           <button
             className={`btn btn-sm ${status === option.value ? 'btn-primary' : 'btn-outline'}`}
             type="button"
-            role="tab"
-            aria-selected={status === option.value}
+            aria-pressed={status === option.value}
             key={option.value}
             onClick={() => changeStatus(option.value)}
           >
@@ -217,42 +347,47 @@ export default function AdminWall() {
       </div>
 
       <div className="admin-toolbar mb-4">
-        <input className="field admin-toolbar-search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && submitSearch()} placeholder="搜索留言内容..." />
+        <label className="sr-only" htmlFor={`admin-review-search-${scope}`}>搜索{queue.item}内容</label>
+        <input id={`admin-review-search-${scope}`} className="field admin-toolbar-search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && submitSearch()} placeholder={`搜索${queue.item}内容...`} />
         <button className="btn btn-primary" type="button" onClick={submitSearch}><i className="bi bi-search" />搜索</button>
         <button className="btn btn-outline" type="button" onClick={load}><i className="bi bi-arrow-clockwise" />刷新</button>
       </div>
 
       <div className="mb-4 flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border-color)] bg-[var(--card-secondary-bg)] px-4 py-3">
         <label className="flex cursor-pointer items-center gap-2 text-sm font-bold">
-          <input type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
+          <input type="checkbox" checked={allPageSelected} disabled={loading} onChange={togglePageSelection} />
           <span>本页全选</span>
         </label>
-        <span className="text-sm text-muted">当前筛选 {total} 条，已选 {selectedIds.length} 条</span>
+        <span className="text-sm text-muted" aria-live="polite">当前筛选 {total} {queue.unit}，已选 {selectedIds.length} {queue.unit}</span>
         <div className="flex flex-wrap gap-2">
-          <button className="btn btn-sm btn-success" type="button" disabled={!selectedIds.length || busy} onClick={() => runBulk('approve')}><i className="bi bi-check2-all" />批量通过</button>
-          <button className="btn btn-sm btn-outline" type="button" disabled={!selectedIds.length || busy} onClick={() => runBulk('return')}><i className="bi bi-arrow-counterclockwise" />批量退回</button>
-          <button className="btn btn-sm btn-danger" type="button" disabled={!selectedIds.length || busy} onClick={() => openHideDialog({ bulk: true, count: selectedIds.length })}><i className="bi bi-eye-slash" />批量下架</button>
+          <button className="btn btn-sm btn-success" type="button" disabled={loading || !selectedIds.length || busy} onClick={() => runBulk('approve')}><i className="bi bi-check2-all" />批量通过</button>
+          <button className="btn btn-sm btn-outline" type="button" disabled={loading || !selectedIds.length || busy} onClick={() => runBulk('return')}><i className="bi bi-arrow-counterclockwise" />批量退回</button>
+          {canManage ? <button className="btn btn-sm btn-danger" type="button" disabled={loading || !selectedIds.length || busy} onClick={() => openHideDialog({ bulk: true, count: selectedIds.length })}><i className="bi bi-eye-slash" />批量下架</button> : null}
         </div>
       </div>
 
-      {loading ? <div className="page-center"><div className="spinner" /></div> : null}
+      {loading ? <div className="page-center" role="status" aria-live="polite"><div className="spinner" /><span className="sr-only">正在加载{queue.item}</span></div> : null}
       {!loading && !messages.length ? (
         <div className="empty-state-card">
           <i className="bi bi-inbox" />
           <h2 className="mt-3 text-lg font-bold">当前队列为空</h2>
-          <p className="mt-1 text-sm text-muted">没有符合当前筛选条件的留言。</p>
+          <p className="mt-1 text-sm text-muted">没有符合当前筛选条件的{queue.item}。</p>
         </div>
       ) : null}
 
-      <div className="space-y-3">
+      {!loading ? <div className="space-y-3">
         {messages.map((message) => (
           <article className={`card message-card p-4 ${message.moderation_status === 'hidden' ? 'admin-message-hidden' : ''}`} key={message.id}>
             <div className="flex flex-col gap-3 md:flex-row md:justify-between">
               <div className="flex min-w-0 flex-1 gap-3">
-                <input className="mt-1 h-5 w-5 shrink-0" type="checkbox" checked={selectedIds.includes(message.id)} onChange={() => toggleSelection(message.id)} aria-label={`选择留言 ${message.id}`} />
+                <label className="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-start justify-center pt-1" title={`选择此${queue.item}`}>
+                  <input className="h-5 w-5" type="checkbox" checked={selectedIds.includes(message.id)} onChange={() => toggleSelection(message.id)} />
+                  <span className="sr-only">选择{queue.item} {message.id}</span>
+                </label>
                 <div className="min-w-0 flex-1">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="badge">#{message.id}</span>
+                    <span className="badge"><i className={`bi ${queue.icon}`} />{isConfessionQueue ? '表白便签' : '帖子'}</span>
                     <ReviewBadge message={message} />
                     {message.pinned ? <span className="badge status-warning"><i className="bi bi-pin-angle" />置顶</span> : null}
                     {message.featured ? <span className="badge status-success"><i className="bi bi-star-fill" />精华</span> : null}
@@ -260,30 +395,32 @@ export default function AdminWall() {
                     {message.poll ? <span className="badge"><i className="bi bi-ui-radios-grid" />投票 {message.poll.total_votes || 0} 票</span> : null}
                     <span className="text-sm text-muted">{message.timestamp || message.time}</span>
                   </div>
-                  <p className="message-text line-clamp-3">{message.text || message.poll?.question || '附件留言'}</p>
+                  <p className="message-text line-clamp-3">{message.text || message.poll?.question || `附件${queue.item}`}</p>
                   {message.moderation_status === 'hidden' ? <p className="mt-2 text-sm text-danger">下架原因：{message.hidden_reason || '违反社区规范'}</p> : null}
                   <div className="mt-2"><BoundUser message={message} /></div>
                   <div className="mt-2 flex gap-4 text-sm text-muted"><span><i className="bi bi-heart" /> {message.likes || 0}</span><span><i className="bi bi-chat" /> {message.comments?.length || 0}</span></div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 self-start md:w-48">
-                <button className={`btn btn-sm justify-center ${message.review_status === 'approved' ? 'btn-outline' : 'btn-success'}`} disabled={busy} onClick={() => review(message, message.review_status === 'approved' ? 'return' : 'approve')}>
+                <button className={`btn btn-sm justify-center ${message.review_status === 'approved' ? 'btn-outline' : 'btn-success'}`} disabled={busy} title={message.review_status === 'approved' ? '退回待审核队列' : '通过审核并按发布规则公开'} onClick={() => review(message, message.review_status === 'approved' ? 'return' : 'approve')}>
                   <i className={`bi ${message.review_status === 'approved' ? 'bi-arrow-counterclockwise' : 'bi-check-circle'}`} />
                   {message.review_status === 'approved' ? '退回待审' : '通过审核'}
                 </button>
                 <button className="btn btn-sm btn-outline justify-center" onClick={() => detail(message)}><i className="bi bi-info-circle" />详情</button>
-                <button className="btn btn-sm btn-outline justify-center" disabled={busy} onClick={() => updateModeration(message, { pinned: !message.pinned })}><i className="bi bi-pin-angle" />{message.pinned ? '取消置顶' : '置顶'}</button>
-                <button className="btn btn-sm btn-outline justify-center" disabled={busy} onClick={() => updateModeration(message, { featured: !message.featured })}><i className="bi bi-star-fill" />{message.featured ? '取消精华' : '设为精华'}</button>
-                <button className={`btn btn-sm col-span-2 justify-center ${message.moderation_status === 'hidden' ? 'btn-success' : 'btn-outline'}`} disabled={busy} onClick={() => message.moderation_status === 'hidden' ? updateModeration(message, { hidden: false }) : openHideDialog(message)}>
-                  <i className={`bi ${message.moderation_status === 'hidden' ? 'bi-eye' : 'bi-eye-slash'}`} />
-                  {message.moderation_status === 'hidden' ? '恢复' : '下架留言'}
-                </button>
-                <button className="btn btn-sm btn-danger col-span-2 justify-center" disabled={busy} onClick={() => setDeleteTarget(message)}><i className="bi bi-trash3" />移入回收站</button>
+                {canManage ? <>
+                  <button className="btn btn-sm btn-outline justify-center" disabled={busy} onClick={() => updateModeration(message, { pinned: !message.pinned })}><i className="bi bi-pin-angle" />{message.pinned ? '取消置顶' : '置顶'}</button>
+                  <button className="btn btn-sm btn-outline justify-center" disabled={busy} onClick={() => updateModeration(message, { featured: !message.featured })}><i className="bi bi-star-fill" />{message.featured ? '取消精华' : '设为精华'}</button>
+                  <button className={`btn btn-sm col-span-2 justify-center ${message.moderation_status === 'hidden' ? 'btn-success' : 'btn-outline'}`} disabled={busy} onClick={() => message.moderation_status === 'hidden' ? updateModeration(message, { hidden: false }) : openHideDialog(message)}>
+                    <i className={`bi ${message.moderation_status === 'hidden' ? 'bi-eye' : 'bi-eye-slash'}`} />
+                    {message.moderation_status === 'hidden' ? '恢复' : `下架${queue.item}`}
+                  </button>
+                  <button className="btn btn-sm btn-danger col-span-2 justify-center" disabled={busy} onClick={() => setDeleteTarget(message)}><i className="bi bi-trash3" />移入回收站</button>
+                </> : null}
               </div>
             </div>
           </article>
         ))}
-      </div>
+      </div> : null}
 
       {totalPages > 1 ? (
         <div className="mt-5 flex items-center justify-center gap-3">
@@ -293,26 +430,74 @@ export default function AdminWall() {
         </div>
       ) : null}
 
-      <Modal visible={Boolean(selected)} title={`留言详情 #${selected?.id || ''}`} width="900px" onClose={() => setSelected(null)}>
+      <Modal visible={Boolean(selected)} title={`${isConfessionQueue ? '表白便签' : '帖子'}详情 #${selected?.id || ''}`} width="900px" onClose={() => setSelected(null)}>
         {selected ? (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2"><ReviewBadge message={selected} />{selected.moderation_status === 'hidden' ? <span className="badge status-danger">已下架</span> : null}</div>
-            <div className="info-callout p-3"><div className="mb-2 font-bold">绑定用户</div><BoundUser message={selected} /></div>
-            <p className="message-text">{selected.text}</p>
-            {selected.moderation_status === 'hidden' ? <div className="info-callout status-danger p-3"><b>已下架：</b>{selected.hidden_reason || '违反社区规范'}</div> : null}
-            <pre className="code-panel">{JSON.stringify(selected, null, 2)}</pre>
-            {selected.comments?.length ? <div className="space-y-2">{selected.comments.map((comment) => <div className="comment-item" key={comment.id}><p>{comment.text}</p>{comment.user ? <p className="mt-2 text-xs text-muted">评论账号：{comment.user.username} / {comment.user.nickname}</p> : null}<button className="btn btn-sm btn-danger mt-2" onClick={() => deleteComment(selected.id, comment.id)}>移入回收站</button></div>)}</div> : null}
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <ReviewBadge message={selected} />
+              {selected.official ? <span className="badge"><i className="bi bi-patch-check-fill" />官方帖子</span> : null}
+              {selected.moderation_status === 'hidden' ? <span className="badge status-danger"><i className="bi bi-eye-slash" />已下架</span> : null}
+              {selected.pinned ? <span className="badge status-warning"><i className="bi bi-pin-angle" />已置顶</span> : null}
+              {selected.featured ? <span className="badge status-success"><i className="bi bi-star-fill" />精华</span> : null}
+            </div>
+
+            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label={`${queue.item}摘要`}>
+              <div className="card-flat p-3"><span className="block text-xs text-muted">提交时间</span><b className="mt-1 block text-sm">{formatTime(selected.timestamp || selected.time)}</b></div>
+              <div className="card-flat p-3"><span className="block text-xs text-muted">公开状态</span><b className="mt-1 block text-sm">{selected.moderation_status === 'pending' ? '等待审核，尚未公开' : selected.moderation_status === 'hidden' ? '已下架' : '已公开'}</b></div>
+              <div className="card-flat p-3"><span className="block text-xs text-muted">互动</span><b className="mt-1 block text-sm">{selected.likes || 0} 赞 · {selected.dislikes || 0} 踩</b></div>
+              <div className="card-flat p-3"><span className="block text-xs text-muted">评论</span><b className="mt-1 block text-sm">{selected.comments?.length || 0} 条</b></div>
+            </section>
+
+            <section className="info-callout p-4">
+              <div>
+                <h3 className="mb-2 text-sm font-bold">发布者</h3>
+                <BoundUser message={selected} />
+              </div>
+            </section>
+
+            <section className="card-flat p-4">
+              <h3 className="text-sm font-bold">{queue.item}内容</h3>
+              <p className="message-text mt-3 whitespace-pre-wrap break-words">{selected.text || selected.poll?.question || (selected.files?.length ? `此${queue.item}只包含附件` : `此${queue.item}没有文字内容`)}</p>
+              {tagNames(selected).length ? <div className="mt-4 flex flex-wrap gap-2">{tagNames(selected).map((tag) => <span className="badge" key={tag}>#{tag}</span>)}</div> : null}
+            </section>
+
+            {selected.poll ? (
+              <section className="card-flat p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-bold">投票</h3><span className="badge">{selected.poll.total_votes || 0} 票</span></div>
+                <p className="mt-2 font-semibold">{selected.poll.question}</p>
+                <div className="mt-3 space-y-2">{(selected.poll.options || []).map((option, index) => <div className="flex items-center justify-between rounded-lg bg-[var(--card-secondary-bg)] px-3 py-2 text-sm" key={option.id || index}><span>{option.text || option.label || `选项 ${index + 1}`}</span><b>{option.votes || 0} 票</b></div>)}</div>
+              </section>
+            ) : null}
+
+            <AttachmentList files={selected.files || selected.filenames || []} itemLabel={queue.item} />
+
+            {selected.moderation_status === 'hidden' ? <div className="info-callout status-danger p-4"><i className="bi bi-eye-slash" /><span><b>下架原因：</b>{selected.hidden_reason || '违反社区规范'}</span></div> : null}
+
+            {selected.review_status !== 'approved' ? (
+              <button className="btn btn-success w-full justify-center" type="button" disabled={busy} onClick={async () => { if (await review(selected, 'approve')) setSelected(null) }}><i className="bi bi-check-circle" />通过这{queue.unit}{queue.item}</button>
+            ) : null}
+
+            <section className="space-y-2">
+              <h3 className="text-sm font-bold">评论（{selected.comments?.length || 0}）</h3>
+              {selected.comments?.length ? selected.comments.map((comment) => (
+                <div className="comment-item" key={comment.id}>
+                  <p className="whitespace-pre-wrap break-words">{comment.text}</p>
+                  <p className="mt-2 text-xs text-muted">{comment.user ? `评论用户：${comment.user.nickname || comment.user.username || '已登录用户'}` : '匿名评论'} · {formatTime(comment.timestamp || comment.time)}</p>
+                  {canManage ? <button className="btn btn-sm btn-danger mt-2" type="button" onClick={() => deleteComment(selected.id, comment.id)}>移入回收站</button> : null}
+                </div>
+              )) : <p className="rounded-xl bg-[var(--card-secondary-bg)] p-4 text-sm text-muted">暂无评论</p>}
+            </section>
           </div>
         ) : null}
       </Modal>
 
-      <Modal visible={Boolean(deleteTarget)} title="将留言移入回收站" onClose={() => !busy && setDeleteTarget(null)} footer={<><button className="btn btn-outline" disabled={busy} onClick={() => setDeleteTarget(null)}>取消</button><button className="btn btn-danger" disabled={busy} onClick={remove}>确认移入</button></>}>
-        <p>留言 #{deleteTarget?.id} 将立即从公开页面和管理队列移除，可在“内容回收站”恢复或彻底删除。</p>
+      <Modal visible={canManage && Boolean(deleteTarget)} title={`将${queue.item}移入回收站`} onClose={() => !busy && setDeleteTarget(null)} footer={<><button className="btn btn-outline" disabled={busy} onClick={() => setDeleteTarget(null)}>取消</button><button className="btn btn-danger" disabled={busy} onClick={remove}>确认移入</button></>}>
+        <p>{queue.item} #{deleteTarget?.id} 将立即从公开页面和管理队列移除，可在“内容回收站”恢复或彻底删除。</p>
       </Modal>
 
       <Modal
-        visible={Boolean(hideTarget)}
-        title={hideTarget?.bulk ? `批量下架 ${hideTarget.count || selectedMessages.length} 条留言` : `下架留言 #${hideTarget?.id || ''}`}
+        visible={canManage && Boolean(hideTarget)}
+        title={hideTarget?.bulk ? `批量下架 ${hideTarget.count || selectedMessages.length} ${queue.unit}${queue.item}` : `下架${queue.item} #${hideTarget?.id || ''}`}
         onClose={() => !busy && setHideTarget(null)}
         footer={<><button className="btn btn-outline" disabled={busy} onClick={() => setHideTarget(null)}>取消</button><button className="btn btn-danger" disabled={busy || !hideReason.trim()} onClick={confirmHide}>确认下架</button></>}
       >

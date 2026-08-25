@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 
 const currentFile = fileURLToPath(import.meta.url)
+const defaultSecretKey = 'your-secret-key-change-in-production'
+const defaultPostgresPassword = 'campus_wall_dev'
 
 export const backendDir = path.resolve(path.dirname(currentFile), '..')
 export const projectRoot = path.resolve(backendDir, '..')
@@ -27,10 +29,20 @@ const intEnv = (name, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {})
   return value
 }
 
+const dateEnv = (name, fallback) => {
+  const value = String(process.env[name] || fallback).trim()
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : fallback
+}
+
 export const config = {
+  environment: String(process.env.NODE_ENV || 'development').toLowerCase(),
+  schoolName: process.env.SCHOOL_NAME || '校园社区',
+  siteName: process.env.SITE_NAME || '校园墙',
+  siteLaunchedAt: dateEnv('SITE_LAUNCHED_AT', null),
   appName: process.env.APP_NAME || '校园墙 API',
   debug: boolEnv('DEBUG', false),
-  secretKey: process.env.SECRET_KEY || 'your-secret-key-change-in-production',
+  secretKey: process.env.SECRET_KEY || defaultSecretKey,
   host: process.env.HOST || '0.0.0.0',
   port: intEnv('PORT', 5412, { min: 1, max: 65535 }),
   uploadFolder: process.env.UPLOAD_FOLDER || path.join('static', 'uploads'),
@@ -43,11 +55,15 @@ export const config = {
   pgPort: intEnv('PGPORT', 5432, { min: 1, max: 65535 }),
   pgDatabase: process.env.PGDATABASE || 'campus_wall',
   pgUser: process.env.PGUSER || 'campus_wall',
-  pgPassword: process.env.PGPASSWORD || 'campus_wall_dev',
+  pgPassword: process.env.PGPASSWORD || (process.env.DATABASE_URL ? '' : defaultPostgresPassword),
   pgSsl: boolEnv('PGSSL', false),
   maxBodySize: intEnv('MAX_BODY_SIZE', 1024 * 1024),
-  maxContentLength: intEnv('MAX_CONTENT_LENGTH', 500 * 1024 * 1024),
+  maxContentLength: intEnv('MAX_CONTENT_LENGTH', 100 * 1024 * 1024),
   maxChunkSize: intEnv('MAX_CHUNK_SIZE', 10 * 1024 * 1024),
+  unreferencedUploadRetentionMs: intEnv('UNREFERENCED_UPLOAD_RETENTION_MS', 2 * 60 * 60 * 1000, { min: 15 * 60 * 1000, max: 7 * 24 * 60 * 60 * 1000 }),
+  pendingAttachmentRetentionMs: intEnv('PENDING_ATTACHMENT_RETENTION_MS', 48 * 60 * 60 * 1000, { min: 60 * 60 * 1000, max: 30 * 24 * 60 * 60 * 1000 }),
+  maxUploadStorageBytes: intEnv('MAX_UPLOAD_STORAGE_BYTES', 8 * 1024 * 1024 * 1024, { min: 512 * 1024 * 1024, max: 1024 * 1024 * 1024 * 1024 }),
+  minFreeDiskBytes: intEnv('MIN_FREE_DISK_BYTES', 8 * 1024 * 1024 * 1024, { min: 512 * 1024 * 1024, max: 1024 * 1024 * 1024 * 1024 }),
   ffmpegTimeoutMs: intEnv('FFMPEG_TIMEOUT_MS', 120000),
   maxTextLength: intEnv('MAX_TEXT_LENGTH', 10000),
   maxTitleLength: intEnv('MAX_TITLE_LENGTH', 200),
@@ -61,15 +77,20 @@ export const config = {
   maxPollOptionLength: intEnv('MAX_POLL_OPTION_LENGTH', 80, { min: 10, max: 500 }),
   maxPollDurationDays: intEnv('MAX_POLL_DURATION_DAYS', 30, { min: 1, max: 365 }),
   maxAvatarSize: intEnv('MAX_AVATAR_SIZE', 5 * 1024 * 1024),
-  maxAppIconSize: intEnv('MAX_APP_ICON_SIZE', 5 * 1024 * 1024),
-  maxUserImportSize: intEnv('MAX_USER_IMPORT_SIZE', 10 * 1024 * 1024),
-  maxUserImportRows: intEnv('MAX_USER_IMPORT_ROWS', 5000, { min: 1, max: 50000 }),
+  avatarOutputSize: intEnv('AVATAR_OUTPUT_SIZE', 512, { min: 64, max: 1024 }),
+  avatarWebpQuality: intEnv('AVATAR_WEBP_QUALITY', 82, { min: 50, max: 95 }),
+  maxAvatarInputPixels: intEnv('MAX_AVATAR_INPUT_PIXELS', 40_000_000, { min: 1_000_000, max: 100_000_000 }),
+  maxConcurrentAvatarProcessing: intEnv('MAX_CONCURRENT_AVATAR_PROCESSING', 2, { min: 1, max: 16 }),
   messagePageSize: intEnv('MESSAGE_PAGE_SIZE', 15),
   maxPublicQuerySize: intEnv('MAX_PUBLIC_QUERY_SIZE', 10000),
   rateLimitLogin: intEnv('RATE_LIMIT_LOGIN', 30, { min: 3, max: 1000 }),
+  rateLimitRegister: intEnv('RATE_LIMIT_REGISTER', 10, { min: 2, max: 500 }),
   rateLimitWrite: intEnv('RATE_LIMIT_WRITE', 40, { min: 5, max: 10000 }),
   rateLimitInteraction: intEnv('RATE_LIMIT_INTERACTION', 240, { min: 20, max: 50000 }),
-  rateLimitUpload: intEnv('RATE_LIMIT_UPLOAD', 600, { min: 20, max: 50000 }),
+  rateLimitUpload: intEnv('RATE_LIMIT_UPLOAD', 240, { min: 20, max: 50000 }),
+  rateLimitUploadBytes: intEnv('RATE_LIMIT_UPLOAD_BYTES', 256 * 1024 * 1024, { min: 1024 * 1024, max: 10 * 1024 * 1024 * 1024 }),
+  maxConcurrentUploadsPerIp: intEnv('MAX_CONCURRENT_UPLOADS_PER_IP', 3, { min: 1, max: 100 }),
+  maxConcurrentUploadsGlobal: intEnv('MAX_CONCURRENT_UPLOADS_GLOBAL', 24, { min: 1, max: 1000 }),
   rateLimitFeedback: intEnv('RATE_LIMIT_FEEDBACK', 20, { min: 3, max: 1000 }),
   captchaProvider: String(process.env.CAPTCHA_PROVIDER || 'none').toLowerCase(),
   captchaEnabled: boolEnv('CAPTCHA_ENABLED', String(process.env.CAPTCHA_PROVIDER || 'none').toLowerCase() !== 'none'),
@@ -79,6 +100,18 @@ export const config = {
   sessionCookieSameSite: process.env.SESSION_COOKIE_SAMESITE || 'Lax',
   sessionCookieSecure: boolEnv('SESSION_COOKIE_SECURE', false),
   sessionMaxAge: intEnv('SESSION_MAX_AGE', 7 * 24 * 60 * 60),
+  publicSiteUrl: String(process.env.PUBLIC_SITE_URL || '').trim().replace(/\/+$/, ''),
+  moderationNotifyEnabled: boolEnv('MODERATION_NOTIFY_ENABLED', false),
+  moderationNotifyFeishuWebhook: String(process.env.MODERATION_NOTIFY_FEISHU_WEBHOOK || '').trim(),
+  moderationNotifyFeishuSecret: String(process.env.MODERATION_NOTIFY_FEISHU_SECRET || '').trim(),
+  moderationNotifyWecomWebhook: String(process.env.MODERATION_NOTIFY_WECOM_WEBHOOK || '').trim(),
+  moderationNotifyTimeoutMs: intEnv('MODERATION_NOTIFY_TIMEOUT_MS', 5000, { min: 1000, max: 30000 }),
+  moderationNotifyMaxAttempts: intEnv('MODERATION_NOTIFY_MAX_ATTEMPTS', 6, { min: 1, max: 12 }),
+  moderationNotifyPollMs: intEnv('MODERATION_NOTIFY_POLL_MS', 2000, { min: 500, max: 60000 }),
+  moderationNotifyCoalesceMs: intEnv('MODERATION_NOTIFY_COALESCE_MS', 5000, { min: 500, max: 30000 }),
+  moderationNotifyMinIntervalMs: intEnv('MODERATION_NOTIFY_MIN_INTERVAL_MS', 30000, { min: 5000, max: 10 * 60 * 1000 }),
+  moderationNotifyBatchSize: intEnv('MODERATION_NOTIFY_BATCH_SIZE', 50, { min: 2, max: 200 }),
+  moderationNotifyRetentionDays: intEnv('MODERATION_NOTIFY_RETENTION_DAYS', 30, { min: 1, max: 365 }),
   allowedOrigins: listEnv('ALLOWED_ORIGINS', [
     'http://localhost:5173',
     'http://localhost:5174',
@@ -100,9 +133,18 @@ export const config = {
     'webm',
     'aac',
     'flac',
-    'mid',
-    'apk'
+    'mid'
   ])
+}
+
+if (config.environment === 'production') {
+  const placeholderSecrets = new Set([defaultSecretKey, 'change-this-secret-in-production'])
+  if (placeholderSecrets.has(String(config.secretKey).trim())) {
+    throw new Error('Refusing to start in production with the default SECRET_KEY placeholder')
+  }
+  if (config.pgPassword === defaultPostgresPassword) {
+    throw new Error('Refusing to start in production with the default PostgreSQL development password')
+  }
 }
 
 const isInsideBackend = (target) => target === backendDir || target.startsWith(`${backendDir}${path.sep}`)

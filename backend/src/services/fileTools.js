@@ -117,6 +117,90 @@ export const removeUploadedFiles = (filenames = []) => {
   }
 }
 
+export const cleanupStaleUploads = ({ isReferenced = () => false, now = Date.now() } = {}) => {
+  const olderThan = now - config.unreferencedUploadRetentionMs
+  let uploads = 0
+  let chunks = 0
+  const uploadDir = resolveBackend(config.uploadFolder)
+  const tinyDir = resolveBackend(config.tinyFolder)
+  const chunkDir = resolveBackend(config.chunkFolder)
+
+  if (fs.existsSync(uploadDir)) {
+    for (const entry of fs.readdirSync(uploadDir, { withFileTypes: true })) {
+      if (!entry.isFile() || isReferenced(entry.name)) continue
+      const filePath = uploadPath(entry.name)
+      if (fs.statSync(filePath).mtimeMs > olderThan) continue
+      removeUploadedFiles([entry.name])
+      uploads += 1
+    }
+  }
+
+  if (fs.existsSync(tinyDir)) {
+    for (const entry of fs.readdirSync(tinyDir, { withFileTypes: true })) {
+      if (!entry.isFile() || isReferenced(entry.name)) continue
+      const filePath = tinyPath(entry.name)
+      if (fs.statSync(filePath).mtimeMs <= olderThan) fs.rmSync(filePath, { force: true })
+    }
+  }
+
+  if (fs.existsSync(chunkDir)) {
+    for (const entry of fs.readdirSync(chunkDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const dirPath = chunkRoot(entry.name)
+      const metadataPath = path.join(dirPath, 'metadata.json')
+      let touchedAt = fs.statSync(dirPath).mtimeMs
+      if (fs.existsSync(metadataPath)) {
+        try {
+          const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'))
+          const timestamp = Number(metadata.timestamp) * 1000
+          if (Number.isFinite(timestamp)) touchedAt = Math.max(touchedAt, timestamp)
+        } catch {}
+      }
+      if (touchedAt > olderThan) continue
+      fs.rmSync(dirPath, { recursive: true, force: true })
+      chunks += 1
+    }
+  }
+
+  return { uploads, chunks }
+}
+
+const directorySize = (root) => {
+  if (!fs.existsSync(root)) return 0
+  let total = 0
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const entryPath = path.join(root, entry.name)
+    if (entry.isDirectory()) total += directorySize(entryPath)
+    else if (entry.isFile()) total += fs.statSync(entryPath).size
+  }
+  return total
+}
+
+let uploadUsageCache = { checkedAt: 0, bytes: 0 }
+
+export const reserveUploadCapacity = (additionalBytes = 0) => {
+  const bytes = Math.max(0, Number(additionalBytes) || 0)
+  const uploadRoot = resolveBackend(config.uploadFolder)
+  const stats = fs.statfsSync(uploadRoot)
+  const freeBytes = Number(stats.bavail) * Number(stats.bsize)
+  if (freeBytes - bytes < config.minFreeDiskBytes) {
+    return { success: false, error: '服务器存储空间不足，暂时无法上传' }
+  }
+
+  const now = Date.now()
+  if (now - uploadUsageCache.checkedAt > 15000) {
+    uploadUsageCache = {
+      checkedAt: now,
+      bytes: directorySize(uploadRoot) + directorySize(resolveBackend(config.chunkFolder)) + directorySize(resolveBackend(config.tinyFolder))
+    }
+  }
+  if (uploadUsageCache.bytes + bytes > config.maxUploadStorageBytes) {
+    return { success: false, error: '校园墙附件存储已达到安全上限，请稍后再试' }
+  }
+  uploadUsageCache.bytes += bytes
+  return { success: true }
+}
+
 export const findAppConfigs = () => {
   const dirs = [
     resolveBackend('static', 'apps'),

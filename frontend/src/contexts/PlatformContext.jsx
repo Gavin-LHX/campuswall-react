@@ -9,6 +9,8 @@ const defaultRules = [
 ].join('\n')
 
 export const defaultCommunity = Object.freeze({
+  school_name: '校园社区',
+  site_name: '校园墙',
   posting_enabled: true,
   commenting_enabled: true,
   guest_posting_enabled: true,
@@ -17,7 +19,9 @@ export const defaultCommunity = Object.freeze({
   pause_reason: '',
   community_rules: defaultRules,
   source: 'default',
-  updated_at: null
+  updated_at: null,
+  server_time: null,
+  site_launched_at: null
 })
 
 const PlatformContext = createContext(null)
