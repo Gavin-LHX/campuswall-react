@@ -1,5 +1,7 @@
 # 宝塔面板部署教程
 
+> 本文使用 `wall.example.com` 和示例目录演示部署。请先替换域名、路径、数据库密码和密钥；仓库中的 `deploy/campuswall.service` 可作为 systemd 模板。
+
 本文档说明如何在宝塔面板上部署本项目。当前项目结构是：
 
 - 前端：React + Vite，构建后输出到 `frontend/dist`
@@ -20,7 +22,7 @@
 
 - 系统：Debian / Ubuntu / CentOS / AlmaLinux 均可
 - 内存：至少 2GB，文件上传和图片处理较多时建议 4GB+
-- Node.js：20 或更高
+- Node.js：22 LTS 或更高
 - Nginx：宝塔网站服务
 - PostgreSQL 18：系统直接安装并常驻运行
 - ffmpeg：用于视频转换和预览
@@ -28,7 +30,7 @@
 宝塔面板中安装：
 
 1. 软件商店安装 `Nginx`
-2. 软件商店安装 `Node.js 版本管理器`，安装 Node.js 20 或 22 LTS
+2. 软件商店安装 `Node.js 版本管理器`，安装 Node.js 22 LTS 或更高版本
 3. 安装 PostgreSQL 18，优先使用系统包或 PostgreSQL 官方仓库
 4. 可选安装 `PM2 管理器`，也可以用宝塔的 Node 项目管理器
 
@@ -60,21 +62,21 @@ yum install -y ffmpeg
 推荐目录：
 
 ```bash
-/www/wwwroot/campusWall
+/opt/campus-wall
 ```
 
 方式一：用 Git 拉取：
 
 ```bash
-cd /www/wwwroot
-git clone <你的仓库地址> campusWall
-cd campusWall
+cd /opt
+git clone <你的仓库地址> campus-wall
+cd campus-wall
 ```
 
 方式二：用宝塔文件管理上传压缩包，解压到：
 
 ```bash
-/www/wwwroot/campusWall
+/opt/campus-wall
 ```
 
 确认根目录下能看到：
@@ -89,7 +91,7 @@ package-lock.json
 安装依赖：
 
 ```bash
-cd /www/wwwroot/campusWall
+cd /opt/campus-wall
 npm install
 ```
 
@@ -148,21 +150,12 @@ host    campus_wall    campus_wall    127.0.0.1/32    scram-sha-256
 systemctl reload postgresql
 ```
 
-如果你有旧 SQLite 数据，需要导入到 PostgreSQL，只运行一次：
-
-```bash
-cd /www/wwwroot/campusWall
-npm run db:migrate
-```
-
-迁移脚本会读取 `backend/static/messages/messages.db`，不会删除原来的 SQLite 文件。
-
 ## 四、配置后端环境变量
 
 复制环境变量示例：
 
 ```bash
-cd /www/wwwroot/campusWall
+cd /opt/campus-wall
 cp backend/.env.example backend/.env
 ```
 
@@ -171,10 +164,14 @@ cp backend/.env.example backend/.env
 - 推荐方式：`DATABASE_URL` 留空，填写下面的 `PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD`
 - 备用方式：直接填写完整 `DATABASE_URL`，此时后端会优先使用它
 
-按你截图里的 `.env` 结构，生产环境重点改成这样：
+生产环境可按下面的模板配置：
 
 ```env
+SCHOOL_NAME=你的学校名称
+SITE_NAME=你的站点名称
+SITE_LAUNCHED_AT=
 APP_NAME=校园墙 API
+NODE_ENV=production
 DEBUG=false
 
 SECRET_KEY=改成一串足够长的随机密钥
@@ -193,6 +190,20 @@ PGSSL=false
 ALLOWED_ORIGINS=https://wall.example.com
 SESSION_COOKIE_SAMESITE=Lax
 SESSION_COOKIE_SECURE=true
+PUBLIC_SITE_URL=https://wall.example.com
+
+# 审核群机器人（可先保持 false，创建群机器人后再启用）
+MODERATION_NOTIFY_ENABLED=false
+MODERATION_NOTIFY_FEISHU_WEBHOOK=
+MODERATION_NOTIFY_FEISHU_SECRET=
+MODERATION_NOTIFY_WECOM_WEBHOOK=
+MODERATION_NOTIFY_TIMEOUT_MS=5000
+MODERATION_NOTIFY_MAX_ATTEMPTS=6
+MODERATION_NOTIFY_POLL_MS=2000
+MODERATION_NOTIFY_COALESCE_MS=5000
+MODERATION_NOTIFY_MIN_INTERVAL_MS=30000
+MODERATION_NOTIFY_BATCH_SIZE=50
+MODERATION_NOTIFY_RETENTION_DAYS=30
 
 CAPTCHA_PROVIDER=none
 CAPTCHA_ENABLED=false
@@ -203,6 +214,11 @@ CAPTCHA_TIMEOUT_MS=8000
 # 社区功能与防刷限制
 MAX_POLL_OPTIONS=6
 MAX_POLL_DURATION_DAYS=30
+MAX_AVATAR_SIZE=5242880
+AVATAR_OUTPUT_SIZE=512
+AVATAR_WEBP_QUALITY=82
+MAX_AVATAR_INPUT_PIXELS=40000000
+MAX_CONCURRENT_AVATAR_PROCESSING=2
 RATE_LIMIT_LOGIN=30
 RATE_LIMIT_WRITE=40
 RATE_LIMIT_INTERACTION=240
@@ -224,21 +240,33 @@ openssl rand -hex 32
 - 宝塔/Nginx 只反代到本机 `127.0.0.1:5412`；接口限流会读取代理后的访问地址，修改限额后需要重启 Node 项目
 - `ALLOWED_ORIGINS` 必须包含你的实际访问域名，本文使用 `https://wall.example.com` 作为示例
 - 如果以后前端和后端分开域名部署，也要把前端域名加入 `ALLOWED_ORIGINS`
+- `PUBLIC_SITE_URL` 用于生成机器人里的审核后台深链，应填写用户实际访问的网站根地址；普通帖子单类提醒进入 `/admin/wall`，表白墙单类提醒进入 `/admin/confessions`，混合摘要进入 `/admin`
+- 飞书或企业微信群机器人 Webhook 属于密钥，只写入服务器环境变量，不提交到仓库；配置完成后再把 `MODERATION_NOTIFY_ENABLED` 改为 `true` 并重启后端
+- `PUBLIC_SITE_URL` 只有使用 HTTPS 才会出现在群机器人按钮中；HTTP 生产站仍会发送提醒，但省略后台登录链接
+- 同一机器人默认每 30 秒最多发送一条摘要；首次启用时，历史待审积压只发送一条汇总提醒。通知中的“全站当前待审”是帖子与表白墙两个展示队列的合计，不是落地页的单队列数量
 
-管理员账号状态、权限和密码哈希保存在：
+如果使用仓库提供的 systemd 模板，请把最终配置安装到模板引用的位置，并限制为 root 读取：
 
-```text
-backend/managers.json
+```bash
+install -d -m 0750 /etc/campus-wall
+install -m 0600 backend/.env /etc/campus-wall/backend.env
 ```
 
-公共源码仓库不会包含这个文件，也不会包含数据库、反馈/举报、日志、头像或上传文件。全新部署需要先执行下方恢复命令创建第一个管理员；迁移已有站点时，请从加密备份单独恢复运行数据，不能从 Git 仓库恢复。
+当前账号、角色、状态和密码哈希统一保存在 PostgreSQL `users` 表。`backend/managers.json` 仅作为旧版后台账号的一次性迁移输入，不再是运行时账号源。公共源码仓库不会包含数据库、反馈/举报、日志、头像或上传文件；迁移已有站点时必须从加密备份单独恢复运行数据，不能从 Git 仓库恢复。
 
-后端首次启动时会把旧格式中的明文密码自动迁移为 scrypt 哈希。上线后登录 `/admin/managers` 修改当前管理员密码，不要手工把明文密码写回 JSON。
+完成数据库和 `backend/.env` 配置后，如果有旧 SQLite 数据需要导入，只运行一次：
+
+```bash
+cd /opt/campus-wall
+npm run db:migrate
+```
+
+迁移脚本会读取 `backend/static/messages/messages.db`，不会删除原来的 SQLite 文件。
 
 如果忘记密码或管理员账号全部被停用，在项目根目录执行：
 
 ```bash
-cd /www/wwwroot/campusWall
+cd /opt/campus-wall
 npm run admin:reset-password -- admin
 ```
 
@@ -251,7 +279,7 @@ npm run admin:reset-password -- admin
 构建：
 
 ```bash
-cd /www/wwwroot/campusWall
+cd /opt/campus-wall
 npm run build
 ```
 
@@ -277,7 +305,7 @@ backend/src/server.js
 
 ```bash
 npm install -g pm2
-cd /www/wwwroot/campusWall/backend
+cd /opt/campus-wall/backend
 pm2 start src/server.js --name campus-wall-api --time
 pm2 save
 ```
@@ -300,17 +328,17 @@ curl http://127.0.0.1:5412/health
 
 在宝塔中添加 Node 项目：
 
-- 项目目录：`/www/wwwroot/campusWall`
+- 项目目录：`/opt/campus-wall`
 - 项目名称：例如 `campuswall`
 - 启动选项：选择“自定义启动命令”
 - 自定义启动命令：`node backend/src/server.js`
-- Node 版本：建议选择 Node 20 或 22 的 LTS 版本，至少要 20+
+- Node 版本：建议选择 Node 22 LTS 或更高版本
 - 包管理器：选择 `npm`，不要选 `pnpm`
 - 项目端口：`5412`
 - 环境变量文件：后端会固定读取 `backend/.env`
 - 安装依赖：如果你已经在服务器执行过 `npm install`，可以勾选“不安装 node_module”；否则不要勾选，让宝塔安装依赖
 
-如果你的实际目录是截图里的 `/www/wwwroot/campusWall-react-new`，上面的项目目录就填这个实际路径，后续 Nginx 根目录也同样替换。
+如果你使用其他项目目录，请同步替换后续命令、systemd 和 Nginx 配置中的路径。
 
 不要直接选择宝塔下拉里的 `start:backend:npm --workspace backend start`。部分宝塔版本会把它错误当成命令 `start:backend:npm` 执行，然后报：
 
@@ -330,7 +358,7 @@ nohup: failed to run command 'start:backend:npm': No such file or directory
 
 如果你想把项目目录填成后端目录，也可以这样配置：
 
-- 项目目录：`/www/wwwroot/campusWall/backend`
+- 项目目录：`/opt/campus-wall/backend`
 - 启动选项：选择“自定义启动命令”
 - 自定义启动命令：`node src/server.js`
 
@@ -351,7 +379,7 @@ curl http://127.0.0.1:5412/health
 填写：
 
 - 域名：`wall.example.com`（替换为你的实际域名）
-- 根目录：`/www/wwwroot/campusWall/frontend/dist`
+- 根目录：`/opt/campus-wall/frontend/dist`
 - PHP：纯静态，不需要 PHP
 - 数据库：不在宝塔网站里创建；使用系统 PostgreSQL 中已经创建好的 `campus_wall` 数据库
 
@@ -364,6 +392,21 @@ curl http://127.0.0.1:5412/health
 开启强制 HTTPS。
 
 如果域名使用 Cloudflare 代理，并且 Cloudflare SSL/TLS 模式是 `Full` 或 `Full (strict)`，宝塔里必须给同一个站点 `wall.example.com` 配好 443/SSL。只配置 80 会导致 Cloudflare 访问源站 443 时命中宝塔默认站点，表现为首页变成“站点创建成功”或 `/health`、`/api/...` 返回 Nginx 404。
+
+使用 Cloudflare 橙云时，还应安装仓库中维护的可信边缘网段配置：
+
+```bash
+install -d -m 0755 /etc/campus-wall
+install -m 0644 deploy/cloudflare-realip.conf /etc/campus-wall/cloudflare-realip.conf
+```
+
+然后在该站点的 `server { ... }` 中加入下面一行并执行 `nginx -t`。这只信任 Cloudflare 官方网段提供的 `CF-Connecting-IP`，不要在未限制来源时直接信任该请求头：
+
+```nginx
+include /etc/campus-wall/cloudflare-realip.conf;
+```
+
+未使用 Cloudflare 代理时不要启用这项配置。
 
 可以在本地或服务器上这样确认源站 443 是否命中正确站点：
 
@@ -394,7 +437,7 @@ location ^~ /api/ {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $host;
     proxy_read_timeout 300s;
@@ -405,7 +448,7 @@ location = /health {
     proxy_pass http://127.0.0.1:5412;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
@@ -413,7 +456,7 @@ location = /static/notice.json {
     proxy_pass http://127.0.0.1:5412;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
@@ -421,7 +464,7 @@ location ^~ /static/uploads/ {
     proxy_pass http://127.0.0.1:5412;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
@@ -429,7 +472,7 @@ location ^~ /static/tiny_files/ {
     proxy_pass http://127.0.0.1:5412;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
@@ -437,7 +480,7 @@ location ^~ /static/apps/ {
     proxy_pass http://127.0.0.1:5412;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
@@ -446,7 +489,7 @@ location ~ ^/user/[^/]+/avatar$ {
     proxy_pass http://127.0.0.1:5412;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
@@ -499,33 +542,44 @@ curl -I https://wall.example.com/
 ```text
 https://wall.example.com/
 https://wall.example.com/wall
-https://wall.example.com/apps
+https://wall.example.com/confessions
+https://wall.example.com/lost-found
 https://wall.example.com/login
 https://wall.example.com/admin
+https://wall.example.com/admin/wall
+https://wall.example.com/admin/confessions
 ```
 
 重点测试：
 
-- 首页、校园墙、应用广场能打开
-- 深链接刷新不 404，例如 `/wall`、`/apps`
+- 首页、校园墙、表白墙和失物招领能打开
+- 深链接刷新不 404，例如 `/wall`、`/confessions`、`/lost-found`、`/admin/wall`、`/admin/confessions`
 - `/api/get_messages` 不 404
 - 上传图片后 `/static/uploads/...` 能访问
 - 登录后 cookie 能保持
-- 管理员后台能登录
+- 管理角色后台能登录，并能从仪表盘或折叠侧栏分别进入“帖子审核”和“表白墙审核”
+- 普通帖子只出现在 `/admin/wall`；只有精确标签 `表白` 且不是结构化 `lost_found` 的内容出现在 `/admin/confessions`；两个页面的状态计数、搜索和分页互不混杂
+- 编辑待审内容的标签只会移动展示队列，不会清除 `review_hold`；切换队列会清除上一页选择项，批量操作不会误带另一页内容
+- 单类机器人提醒进入对应队列，混合摘要进入仪表盘，数量文案明确为“全站当前待审”
+- 在 768px 与 360px 宽度用触控和键盘检查两个审核入口、筛选、搜索、批量栏、卡片按钮和详情 sheet，无横向滚动、safe-area 遮挡或焦点丢失
 
 ## 十一、更新部署
 
 以后更新代码：
 
 ```bash
-cd /www/wwwroot/campusWall
-git pull
-npm install
+cd /opt/campus-wall
+git fetch origin main
+git merge --ff-only origin/main
+npm ci
+npm --workspace backend test
 npm run build
-pm2 restart campus-wall-api
+nginx -t
+systemctl restart campuswall.service
+curl -fsS http://127.0.0.1:5412/health
 ```
 
-如果用宝塔 Node 项目管理器，就在面板里重启后端项目。
+如果采用 PM2 或宝塔 Node 项目管理器，请改用对应的重启方式；上面的命令适用于仓库提供的 `campuswall.service` 模板。
 
 通常更新代码不需要动数据库。只有你改了数据库连接配置时，才需要检查系统 PostgreSQL 服务和连接：
 
@@ -541,22 +595,16 @@ PGPASSWORD='你的数据库密码' psql -h 127.0.0.1 -p 5432 -U campus_wall -d c
 ### 备份 PostgreSQL
 
 ```bash
-cd /www/wwwroot/campusWall
-mkdir -p backups
-PGPASSWORD='你的数据库密码' pg_dump -h 127.0.0.1 -U campus_wall -d campus_wall > backups/campus_wall_$(date +%F).sql
+install -d -m 0750 /var/backups/campus-wall
+sudo -u postgres pg_dump campus_wall > /var/backups/campus-wall/campus_wall_$(date +%F).sql
 ```
+
+备份目录必须位于 Git 工作树之外，并交给受限账号或备份系统管理。
 
 恢复：
 
 ```bash
-PGPASSWORD='你的数据库密码' psql -h 127.0.0.1 -U campus_wall -d campus_wall < backups/你的备份.sql
-```
-
-如果你习惯用 `postgres` 系统用户，也可以：
-
-```bash
-sudo -u postgres pg_dump campus_wall > backups/campus_wall_$(date +%F).sql
-sudo -u postgres psql campus_wall < backups/你的备份.sql
+sudo -u postgres psql campus_wall < /var/backups/campus-wall/你的备份.sql
 ```
 
 ### 备份上传和配置文件
@@ -580,7 +628,7 @@ backend/.env
 
 ## 十三、常见问题
 
-### 1. 页面能打开，但刷新 `/wall` 或 `/apps` 后 404
+### 1. 页面能打开，但刷新 `/wall`、`/confessions`、`/lost-found`、`/admin/wall` 或 `/admin/confessions` 后 404
 
 Nginx 没有配置 SPA 回退。确认有：
 
@@ -740,9 +788,9 @@ psql -h 127.0.0.1 -p 5432 -U campus_wall -d campus_wall -c "SELECT 1;"
 推荐处理方式：
 
 ```bash
-cd /www/wwwroot/campusWall-react-new
+cd /opt/campus-wall
 
-# 如果你的目录不是 campusWall-react-new，改成自己的实际目录
+# 如果你的目录不同，请改成自己的实际目录
 rm -rf node_modules frontend/node_modules backend/node_modules
 npm cache verify
 npm install --include=optional
@@ -760,12 +808,12 @@ npm warn allow-scripts ... sharp ... better-sqlite3 ...
 但项目仍然可以启动，一般可以先观察。若后端仍报 `sharp` 加载失败，再在服务器项目目录执行：
 
 ```bash
-cd /www/wwwroot/campusWall-react-new
+cd /opt/campus-wall
 npm approve-scripts
 npm rebuild sharp --include=optional
 ```
 
-如果上面正常，再回宝塔重启 Node 项目。宝塔里建议选择 Node 20/22 LTS；如果当前只装了 v24.18.0 和 v26.2.0，优先选 v24.18.0。包管理器选择 `npm`，启动项选择“自定义启动命令”，命令填 `node src/server.js`。
+如果上面正常，再回宝塔重启 Node 项目。宝塔里建议选择 Node 22 LTS 或更新的 LTS 版本；如果当前只有非 LTS 版本，优先安装一个受支持的 LTS 版本。包管理器选择 `npm`，启动项选择“自定义启动命令”，命令填 `node src/server.js`。
 
 `npm warn Unknown global config "--init.module"` 一般只是 npm 配置警告，不是这次启动失败的原因；真正让后端退出的是 `sharp` 加载失败。
 
@@ -785,7 +833,7 @@ npm rebuild sharp --include=optional
 ## 十四、推荐最终目录结构
 
 ```text
-/www/wwwroot/campusWall
+/opt/campus-wall
 ├─ backend
 │  ├─ .env
 │  ├─ src
@@ -806,11 +854,11 @@ PostgreSQL 的数据目录由系统 PostgreSQL 服务管理，不放在项目目
 宝塔网站根目录指向：
 
 ```text
-/www/wwwroot/campusWall/frontend/dist
+/opt/campus-wall/frontend/dist
 ```
 
 Node 后端项目目录指向：
 
 ```text
-/www/wwwroot/campusWall/backend
+/opt/campus-wall/backend
 ```

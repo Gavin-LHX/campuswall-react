@@ -10,6 +10,8 @@ dist/
 **/.env
 **/.env.*
 !**/.env.example
+!frontend/.env.production.example
+.wrangler/
 *.pem
 *.key
 *.p12
@@ -24,7 +26,6 @@ backend/help/*.json
 backend/logs/
 backend/error.log
 backend/static/notice.json
-frontend/public/static/notice.json
 
 # Databases and generated/user media
 backend/static/messages/
@@ -33,8 +34,6 @@ backend/static/tiny_files/
 backend/static/chunks/
 backend/static/avatars/
 backend/static/apps/icons/
-frontend/public/static/uploads/
-frontend/public/static/messages/
 *.db
 *.db-shm
 *.db-wal

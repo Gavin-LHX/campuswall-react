@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto'
 import express from 'express'
 import multer from 'multer'
 import { config, resolveBackend } from '../config.js'
-import { requireTrustedOrigin } from '../services/auth.js'
-import { allowedFile, getExtension, makeTinyFiles, processUploadedFile, removeUploadedFiles, safeBasename, uploadPath } from '../services/fileTools.js'
+import { authenticatedAccount, authenticatedAdmin, hasPermission, requireTrustedOrigin } from '../services/auth.js'
+import { allowedFile, makeTinyFiles, safeBasename, uploadPath } from '../services/fileTools.js'
+import { appendAdminLog, nowText } from '../services/jsonStore.js'
+import { isLostFoundMessage, isLostFoundTag, normalizeLostFoundType } from '../services/lostFound.js'
 import { messageStore } from '../services/messageStore.js'
 import { contentWriteRateLimit, interactionRateLimit } from '../services/rateLimit.js'
 import { userStore } from '../services/userStore.js'
@@ -25,7 +27,7 @@ const cookieIds = (req, name) => messageStore.parseCookieIds(req.cookies?.[name]
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next)
 const normalizeText = (value = '') => String(value || '').trim()
 const parseTags = (value = '') => String(value || '').split(',').map((tag) => tag.trim()).filter(Boolean)
-const currentUser = (req) => userStore.getSessionUser(req)
+const currentUser = (req) => authenticatedAccount(req)
 const sendPolicyError = (res, result) => {
   res.status(result.statusCode || 400).json({ success: false, code: result.code, error: result.error })
 }
@@ -93,6 +95,14 @@ const reactionIdentity = async (req, res) => {
   return { user: null, key: `guest:${visitorId}` }
 }
 
+const allowLostFoundInteraction = async (req, res, messageId) => {
+  const message = messageStore.getMessage(messageId)
+  if (!messageStore.isPublicMessage(message) || !isLostFoundMessage(message)) return true
+  if (await currentUser(req)) return true
+  res.status(401).json({ success: false, error: '登录后才能使用失物招领' })
+  return false
+}
+
 const updateReactionCookies = (req, res, messageId, reaction) => {
   const update = (name, active) => {
     const ids = cookieIds(req, name).filter((id) => id !== messageId)
@@ -105,7 +115,7 @@ const updateReactionCookies = (req, res, messageId, reaction) => {
 
 wallRouter.use(requireTrustedOrigin)
 
-wallRouter.post('/comment/:messageId', contentWriteRateLimit, form.array('file', config.maxCommentFiles), asyncRoute(async (req, res) => {
+wallRouter.post('/comment/:messageId', contentWriteRateLimit, form.none(), asyncRoute(async (req, res) => {
   const user = await currentUser(req)
   if (user?.is_muted) {
     res.status(403).json({ success: false, error: '账号已被禁言，暂时不能评论' })
@@ -114,8 +124,7 @@ wallRouter.post('/comment/:messageId', contentWriteRateLimit, form.array('file',
   const messageId = Number(req.params.messageId)
   const text = normalizeText(req.body?.text)
   const referId = normalizeText(req.body?.refer_id)
-  const files = req.files || []
-  if (!text && files.length === 0) {
+  if (!text) {
     res.json({ success: false, error: 'Input cannot be empty' })
     return
   }
@@ -137,27 +146,13 @@ wallRouter.post('/comment/:messageId', contentWriteRateLimit, form.array('file',
     res.status(404).json({ success: false, error: '留言不存在或已下架' })
     return
   }
-
-  if (files.some((file) => !file?.originalname || !allowedFile(file.originalname))) {
-    res.status(400).json({ success: false, error: 'File type is not supported or file is empty' })
+  if (isLostFoundMessage(targetMessage) && !user) {
+    res.status(401).json({ success: false, error: '登录后才能使用失物招领' })
     return
   }
-  const filenames = []
-  try {
-    for (const file of files) {
-      const filename = `id${messageId}_${randomUUID()}_${Date.now()}.${getExtension(file.originalname)}`
-      fs.writeFileSync(uploadPath(filename), file.buffer)
-      filenames.push(filename)
-      filenames[filenames.length - 1] = await processUploadedFile(filename)
-    }
-  } catch (error) {
-    removeUploadedFiles(filenames)
-    throw error
-  }
 
-  const result = await messageStore.commentMessage({ id: messageId, text, files: filenames, referId, user })
+  const result = await messageStore.commentMessage({ id: messageId, text, files: [], referId, user })
   if (!result.success) {
-    removeUploadedFiles(filenames)
     res.status(result.code === 'REPLY_NOT_FOUND' ? 404 : 400).json(result)
     return
   }
@@ -165,13 +160,13 @@ wallRouter.post('/comment/:messageId', contentWriteRateLimit, form.array('file',
   if (targetMessage.user_id) {
     recipients.set(Number(targetMessage.user_id), {
       type: 'comment',
-      content: text || '有人给你的留言添加了附件'
+      content: text
     })
   }
   if (result.reply_to_user_id) {
     recipients.set(Number(result.reply_to_user_id), {
       type: 'reply',
-      content: text ? `回复了你的评论：${text}` : '回复了你的评论并添加了附件'
+      content: `回复了你的评论：${text}`
     })
   }
   await Promise.all(Array.from(recipients.entries()).map(([userId, notification]) => userStore.createNotification({
@@ -192,6 +187,7 @@ wallRouter.post('/comment/:messageId', contentWriteRateLimit, form.array('file',
 
 wallRouter.post('/like/:messageId', interactionRateLimit, asyncRoute(async (req, res) => {
   const messageId = Number(req.params.messageId)
+  if (!await allowLostFoundInteraction(req, res, messageId)) return
   const identity = await reactionIdentity(req, res)
   const legacyReaction = cookieIds(req, 'likes').includes(messageId) ? 1 : (cookieIds(req, 'dislikes').includes(messageId) ? -1 : 0)
   const result = await messageStore.likeMessage(messageId, identity.key, legacyReaction)
@@ -201,6 +197,7 @@ wallRouter.post('/like/:messageId', interactionRateLimit, asyncRoute(async (req,
 
 wallRouter.post('/dislike/:messageId', interactionRateLimit, asyncRoute(async (req, res) => {
   const messageId = Number(req.params.messageId)
+  if (!await allowLostFoundInteraction(req, res, messageId)) return
   const identity = await reactionIdentity(req, res)
   const legacyReaction = cookieIds(req, 'likes').includes(messageId) ? 1 : (cookieIds(req, 'dislikes').includes(messageId) ? -1 : 0)
   const result = await messageStore.dislikeMessage(messageId, identity.key, legacyReaction)
@@ -215,6 +212,7 @@ wallRouter.post('/poll/:messageId/vote', interactionRateLimit, asyncRoute(async 
     res.status(400).json({ success: false, error: '投票参数无效' })
     return
   }
+  if (!await allowLostFoundInteraction(req, res, messageId)) return
   const identity = await reactionIdentity(req, res)
   const result = await messageStore.votePoll(messageId, optionId, identity.key)
   if (result.selected_option_id) rememberPollSelection(req, res, messageId, result.selected_option_id)
@@ -223,7 +221,18 @@ wallRouter.post('/poll/:messageId/vote', interactionRateLimit, asyncRoute(async 
 
 wallRouter.post('/submit', contentWriteRateLimit, form.none(), asyncRoute(async (req, res) => {
   const user = await currentUser(req)
-  if (user?.is_muted) {
+  const adminSession = await authenticatedAdmin(req)
+  const requestedAdminPost = String(req.body?.post_as_admin || '').toLowerCase() === 'true'
+  const canPostAsAdmin = Boolean(adminSession && (
+    hasPermission(adminSession.permissions, 'review_posts')
+    || hasPermission(adminSession.permissions, 'manage_wall_message')
+  ))
+  if (requestedAdminPost && !canPostAsAdmin) {
+    res.status(403).json({ success: false, error: '当前管理员账号无权以官方身份发帖' })
+    return
+  }
+  const postAsAdmin = canPostAsAdmin && (!user || requestedAdminPost)
+  if (user?.is_muted && !postAsAdmin) {
     res.status(403).json({ success: false, error: '账号已被禁言，暂时不能发帖' })
     return
   }
@@ -242,7 +251,18 @@ wallRouter.post('/submit', contentWriteRateLimit, form.none(), asyncRoute(async 
     res.json({ success: false, error: 'Text is too long' })
     return
   }
-  const tags = parseTags(req.body.tags)
+  const rawLostFoundType = normalizeText(req.body?.lost_found_type)
+  const lostFoundType = normalizeLostFoundType(rawLostFoundType)
+  if (rawLostFoundType && !lostFoundType) {
+    res.status(400).json({ success: false, error: '失物招领类型无效' })
+    return
+  }
+  const submittedTags = parseTags(req.body.tags)
+  if (lostFoundType || submittedTags.some(isLostFoundTag)) {
+    res.status(400).json({ success: false, error: '请登录后通过失物招领专用表单发布' })
+    return
+  }
+  const tags = [...new Set(submittedTags)]
   const policy = await settingsStore.checkCommunityWrite('post', {
     user,
     values: [
@@ -267,20 +287,32 @@ wallRouter.post('/submit', contentWriteRateLimit, form.none(), asyncRoute(async 
     return
   }
 
-  const anonymous = user ? String(req.body.anonymous ?? 'true') !== 'false' : true
-  const requireApproval = policy.policy?.require_post_approval === true
+  const anonymous = postAsAdmin ? false : (user ? String(req.body.anonymous ?? 'true') !== 'false' : true)
   const id = await messageStore.postMessage({
     text,
     files: validFiles.map(safeBasename),
     tags,
-    user,
+    user: postAsAdmin ? null : user,
+    admin: postAsAdmin ? {
+      username: adminSession.username,
+      userId: adminSession.user.id,
+      displayName: `${config.siteName}管理员`
+    } : null,
     anonymous,
-    poll: pollResult.poll,
-    requireApproval
+    poll: pollResult.poll
   })
+  const createdMessage = messageStore.getMessage(id)
   for (const filename of validFiles) {
     const tiny = resolveBackend(config.tinyFolder, safeBasename(filename))
     if (!fs.existsSync(tiny)) makeTinyFiles([filename]).catch(() => {})
   }
-  res.json({ success: true, id, moderation_status: requireApproval ? 'pending' : 'visible' })
+  if (postAsAdmin) appendAdminLog(`${nowText()}    ${adminSession.username} 以官方身份直接发布留言 ${id}`)
+  res.json({
+    success: true,
+    id,
+    moderation_status: createdMessage.moderation_status,
+    review_status: createdMessage.review_status,
+    author_type: postAsAdmin ? 'admin' : (user ? 'student' : 'guest'),
+    official: postAsAdmin
+  })
 }))

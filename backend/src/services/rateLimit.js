@@ -1,18 +1,14 @@
-import { createHash } from 'node:crypto'
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit'
 import { config } from '../config.js'
 
-const hashedCookie = (value) => createHash('sha256').update(String(value)).digest('hex').slice(0, 24)
-
-const userOrIpKey = (req) => {
-  const session = req.cookies?.user_session
-  if (session) return `user:${hashedCookie(session)}`
-  return `ip:${ipKeyGenerator(req.ip || req.socket?.remoteAddress || 'unknown')}`
-}
-
 const ipKey = (req) => `ip:${ipKeyGenerator(req.ip || req.socket?.remoteAddress || 'unknown')}`
+const uploadByteWindowMs = 15 * 60 * 1000
+const uploadByteWindows = new Map()
+let lastUploadByteSweep = 0
+const concurrentUploadsByIp = new Map()
+let concurrentUploadsGlobal = 0
 
-const createLimiter = ({ windowMs, limit, message, keyGenerator = userOrIpKey }) => rateLimit({
+const createLimiter = ({ windowMs, limit, message, keyGenerator = ipKey }) => rateLimit({
   windowMs,
   limit,
   keyGenerator,
@@ -32,11 +28,87 @@ const createLimiter = ({ windowMs, limit, message, keyGenerator = userOrIpKey })
   }
 })
 
+const sweepExpiredUploadByteWindows = (now) => {
+  if (now - lastUploadByteSweep < uploadByteWindowMs) return
+  lastUploadByteSweep = now
+  for (const [key, bucket] of uploadByteWindows) {
+    if (bucket.resetAt <= now) uploadByteWindows.delete(key)
+  }
+}
+
+export const consumeUploadBytes = (req, res, byteCount) => {
+  const bytes = Number(byteCount)
+  if (!Number.isSafeInteger(bytes) || bytes < 0) {
+    res.status(400).json({ success: false, error: 'Invalid upload size' })
+    return false
+  }
+
+  const now = Date.now()
+  sweepExpiredUploadByteWindows(now)
+  const key = ipKey(req)
+  let bucket = uploadByteWindows.get(key)
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { bytes: 0, resetAt: now + uploadByteWindowMs }
+    uploadByteWindows.set(key, bucket)
+  }
+
+  if (bucket.bytes + bytes > config.rateLimitUploadBytes) {
+    const retryAfter = Math.max(Math.ceil((bucket.resetAt - now) / 1000), 1)
+    res.set('Retry-After', String(retryAfter))
+    res.status(429).json({
+      success: false,
+      error: '上传流量过大，请稍后再试',
+      retry_after: retryAfter
+    })
+    return false
+  }
+
+  bucket.bytes += bytes
+  return true
+}
+
+export const uploadConcurrencyLimit = (req, res, next) => {
+  const key = ipKey(req)
+  const concurrentForIp = concurrentUploadsByIp.get(key) || 0
+  if (concurrentForIp >= config.maxConcurrentUploadsPerIp || concurrentUploadsGlobal >= config.maxConcurrentUploadsGlobal) {
+    res.set('Retry-After', '1')
+    res.status(429).json({
+      success: false,
+      error: '同时上传任务过多，请稍后再试',
+      retry_after: 1
+    })
+    return
+  }
+
+  concurrentUploadsByIp.set(key, concurrentForIp + 1)
+  concurrentUploadsGlobal += 1
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    const remainingForIp = (concurrentUploadsByIp.get(key) || 1) - 1
+    if (remainingForIp > 0) concurrentUploadsByIp.set(key, remainingForIp)
+    else concurrentUploadsByIp.delete(key)
+    concurrentUploadsGlobal = Math.max(concurrentUploadsGlobal - 1, 0)
+  }
+  res.once('finish', release)
+  res.once('close', release)
+  res.once('error', release)
+  next()
+}
+
 export const loginRateLimit = createLimiter({
   windowMs: 15 * 60 * 1000,
   limit: config.rateLimitLogin,
   keyGenerator: ipKey,
   message: '登录尝试过于频繁，请稍后再试'
+})
+
+export const registerRateLimit = createLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: config.rateLimitRegister,
+  keyGenerator: ipKey,
+  message: '注册尝试过于频繁，请稍后再试'
 })
 
 export const contentWriteRateLimit = createLimiter({

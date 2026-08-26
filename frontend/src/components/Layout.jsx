@@ -1,32 +1,44 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { useUser } from '../contexts/UserContext.jsx'
 import { usePlatform } from '../contexts/PlatformContext.jsx'
+import { useUser } from '../contexts/UserContext.jsx'
 
 const getSystemTheme = () => {
   if (typeof window === 'undefined' || !window.matchMedia) return 'light'
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 const themeStorageKey = 'theme-preference'
-
+const themeModes = new Set(['system', 'light', 'dark'])
+const privilegedRoles = new Set(['reviewer', 'admin', 'super_admin'])
+const readThemeMode = () => {
+  if (typeof window === 'undefined') return 'system'
+  try {
+    const stored = window.localStorage.getItem(themeStorageKey)
+    return themeModes.has(stored) ? stored : 'system'
+  } catch {
+    return 'system'
+  }
+}
+const persistThemeMode = (mode) => {
+  try {
+    window.localStorage.setItem(themeStorageKey, mode)
+  } catch {
+    // Storage can be unavailable in private or sandboxed browsing contexts.
+  }
+}
 export default function Layout() {
-  const [themeMode, setThemeMode] = useState(() => localStorage.getItem(themeStorageKey) || 'system')
+  const [themeMode, setThemeMode] = useState(readThemeMode)
   const [systemTheme, setSystemTheme] = useState(getSystemTheme)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const { user, notificationUnread } = useUser()
   const { community } = usePlatform()
+  const { user, loading: userLoading, notificationUnread } = useUser()
   const navigate = useNavigate()
   const location = useLocation()
+  const schoolName = community.school_name || '校园社区'
+  const siteName = community.site_name || '校园墙'
 
   const resolvedTheme = useMemo(() => themeMode === 'system' ? systemTheme : themeMode, [themeMode, systemTheme])
-  const canPublish = !user?.is_muted
-    && community.posting_enabled
-    && (Boolean(user) || community.guest_posting_enabled)
-  const publishDisabledReason = user?.is_muted
-    ? (user.mute_reason ? `账号已被禁言：${user.mute_reason}` : '账号已被禁言，暂时不能发帖')
-    : (!community.posting_enabled
-        ? (community.pause_reason || '管理员暂时关闭了发帖功能')
-        : '当前仅登录学生可以发帖')
+  const canPublish = community.posting_enabled
+  const publishDisabledReason = community.pause_reason || '管理员暂时关闭了发帖功能'
 
   useEffect(() => {
     const media = window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -42,15 +54,16 @@ export default function Layout() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', resolvedTheme)
+    const themeMeta = document.querySelector('meta[name="theme-color"]')
+    if (themeMeta) themeMeta.setAttribute('content', resolvedTheme === 'dark' ? '#000000' : '#f5f5f7')
   }, [resolvedTheme])
 
   useEffect(() => {
-    localStorage.setItem(themeStorageKey, themeMode)
+    persistThemeMode(themeMode)
   }, [themeMode])
 
   useEffect(() => {
-    setMenuOpen(false)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname])
 
   const toggleTheme = () => {
@@ -59,45 +72,52 @@ export default function Layout() {
 
   const openPublish = () => {
     if (location.pathname !== '/wall') {
-      navigate('/wall')
-      window.setTimeout(() => window.dispatchEvent(new Event('open-publish-modal')), 80)
+      navigate('/wall', { state: { openPublish: true } })
     } else {
       window.dispatchEvent(new Event('open-publish-modal'))
     }
   }
+
+  const accountDestination = user ? '/me' : '/login'
+  const accountLabel = '我的'
+  const unreadLabel = notificationUnread > 99 ? '99+' : notificationUnread
+  const hasAdminAccess = privilegedRoles.has(user?.role)
+  const adminDestination = '/admin'
+  const adminLabel = user?.role === 'reviewer' ? '运营后台' : '管理后台'
 
   return (
     <div className="app-shell">
       <header className="app-navbar">
         <div className="navbar-inner">
           {/* Brand Mark */}
-          <Link to="/" className="brand-link">
+          <Link to="/" className="brand-link" aria-label={`${siteName}首页`}>
             <span className="brand-mark shrink-0" aria-hidden="true">
               <i className="bi bi-chat-heart-fill" />
             </span>
-            <div className="brand-copy flex flex-col leading-tight">
-              <span className="text-base font-black tracking-tight text-[var(--text-primary)] md:text-lg">校园墙</span>
-              <span className="text-[0.68rem] font-medium text-[var(--text-muted)] tracking-wider">CAMPUS WALL</span>
-            </div>
+            <span className="brand-copy font-semibold text-[var(--text-primary)]">{schoolName}</span>
           </Link>
 
           {/* Desktop Navigation Links */}
-          <nav className="site-nav desktop-site-nav">
+          <nav className="site-nav desktop-site-nav" aria-label="主导航">
             <NavLink className="nav-link" to="/" end>
               <i className="bi bi-house" />
               <span>首页</span>
             </NavLink>
             <NavLink className="nav-link" to="/wall">
               <i className="bi bi-chat-square-dots" />
-              <span>校园动态</span>
+              <span>动态</span>
+            </NavLink>
+            <NavLink className="nav-link" to="/confessions">
+              <i className="bi bi-heart" />
+              <span>表白墙</span>
+            </NavLink>
+            <NavLink className="nav-link" to="/lost-found">
+              <i className="bi bi-search" />
+              <span>失物招领</span>
             </NavLink>
             <NavLink className="nav-link" to="/p">
               <i className="bi bi-hash" />
               <span>话题</span>
-            </NavLink>
-            <NavLink className="nav-link" to="/apps">
-              <i className="bi bi-grid-fill" />
-              <span>应用广场</span>
             </NavLink>
             <NavLink className="nav-link" to="/help">
               <i className="bi bi-life-preserver" />
@@ -106,9 +126,22 @@ export default function Layout() {
           </nav>
 
           {/* Right Action Icons */}
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
+          <div className="navbar-actions flex shrink-0 items-center gap-1.5 sm:gap-2.5">
+            {!userLoading && hasAdminAccess ? (
+              <Link
+                className="btn btn-sm btn-outline px-2.5 sm:px-3"
+                to={adminDestination}
+                aria-label={`进入${adminLabel}`}
+                title={`进入${adminLabel}`}
+              >
+                <i className="bi bi-shield-check" />
+                <span className="sm:hidden">{user?.role === 'reviewer' ? '后台' : '管理'}</span>
+                <span className="hidden sm:inline">{adminLabel}</span>
+              </Link>
+            ) : null}
+
             <button
-              className="btn btn-sm btn-primary px-3 shadow-sm sm:px-3.5"
+              className="btn btn-sm btn-primary px-3 sm:px-3.5"
               type="button"
               onClick={openPublish}
               disabled={!canPublish}
@@ -119,44 +152,17 @@ export default function Layout() {
               <span className="mobile-publish-label sm:hidden">发帖</span>
             </button>
 
-            {user ? (
-              <>
-                <Link
-                  to="/me/notifications"
-                  className="btn btn-sm btn-outline relative px-2.5"
-                  title={notificationUnread ? `${notificationUnread} 条未读通知` : '消息通知'}
-                  aria-label={notificationUnread ? `消息通知，${notificationUnread} 条未读` : '消息通知'}
-                >
-                  <i className={`bi ${notificationUnread ? 'bi-bell-fill text-[var(--primary-color)]' : 'bi-bell'}`} />
-                  {notificationUnread ? (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[0.62rem] font-bold leading-none text-white">
-                      {notificationUnread > 99 ? '99+' : notificationUnread}
-                    </span>
-                  ) : null}
-                </Link>
-                <Link
-                  to="/me"
-                  className="btn btn-sm btn-outline flex items-center gap-2 py-1 px-2.5"
-                  title="个人中心"
-                >
-                  {user.avatar_url ? (
-                    <img
-                      src={user.avatar_url}
-                      alt={user.nickname}
-                      className="h-5 w-5 rounded-full object-cover"
-                    />
-                  ) : (
-                    <i className="bi bi-person-fill text-[var(--primary-color)]" />
-                  )}
-                  <span className="hidden max-w-[72px] truncate text-xs font-semibold sm:inline">{user.nickname || '个人中心'}</span>
-                </Link>
-              </>
-            ) : (
-              <Link to="/login" className="btn btn-sm btn-outline px-2.5 sm:px-3" title="学生登录" aria-label="学生登录">
-                <i className="bi bi-box-arrow-in-right" />
-                <span className="hidden sm:inline">登录</span>
+            {!userLoading ? (
+              <Link
+                className="btn btn-sm btn-outline hidden px-3 sm:inline-flex"
+                to={user ? '/me' : '/login'}
+                aria-label={user ? `打开 ${user.nickname || user.username} 的个人中心` : '登录或注册'}
+              >
+                <i className={`bi ${user ? 'bi-person-circle' : 'bi-box-arrow-in-right'}`} />
+                <span className="max-w-24 truncate">{user ? (user.nickname || user.username) : '登录'}</span>
+                {user && notificationUnread > 0 ? <span className="badge status-danger">{notificationUnread > 99 ? '99+' : notificationUnread}</span> : null}
               </Link>
-            )}
+            ) : null}
 
             <button
               className="btn btn-sm btn-outline px-2.5"
@@ -165,79 +171,69 @@ export default function Layout() {
               aria-label="切换主题"
               title={themeMode === 'system' ? '当前跟随系统，点击手动切换' : '切换主题'}
             >
-              <i className={`bi ${resolvedTheme === 'dark' ? 'bi-sun-fill text-amber-400' : 'bi-moon-stars-fill text-indigo-500'} text-base`} />
+              <i className={`theme-icon bi ${resolvedTheme === 'dark' ? 'bi-sun-fill' : 'bi-moon-stars-fill'} text-base`} aria-hidden="true" />
             </button>
 
-            {/* Mobile Menu Hamburger */}
-            <button
-              className="mobile-menu-toggle btn btn-sm btn-outline px-2"
-              type="button"
-              onClick={() => setMenuOpen((open) => !open)}
-              aria-label={menuOpen ? '关闭导航菜单' : '打开导航菜单'}
-              aria-expanded={menuOpen}
-            >
-              <i className={`bi ${menuOpen ? 'bi-x-lg' : 'bi-list'} text-lg`} />
-            </button>
           </div>
         </div>
-
-        {/* Mobile Navigation Drawer */}
-        {menuOpen ? (
-          <div className="mobile-nav-drawer space-y-2 border-t border-[var(--border-color)] bg-[var(--card-solid-bg)] p-4">
-            <NavLink className="nav-link w-full" to="/" end onClick={() => setMenuOpen(false)}>
-              <i className="bi bi-house" />
-              <span>首页</span>
-            </NavLink>
-            <NavLink className="nav-link w-full" to="/wall" onClick={() => setMenuOpen(false)}>
-              <i className="bi bi-chat-square-dots" />
-              <span>校园动态</span>
-            </NavLink>
-            <NavLink className="nav-link w-full" to="/p" onClick={() => setMenuOpen(false)}>
-              <i className="bi bi-hash" />
-              <span>话题分类</span>
-            </NavLink>
-            <NavLink className="nav-link w-full" to="/apps" onClick={() => setMenuOpen(false)}>
-              <i className="bi bi-grid-fill" />
-              <span>应用广场</span>
-            </NavLink>
-            <NavLink className="nav-link w-full" to="/help" onClick={() => setMenuOpen(false)}>
-              <i className="bi bi-life-preserver" />
-              <span>帮助反馈</span>
-            </NavLink>
-            <hr className="border-[var(--border-color)] my-2" />
-            <NavLink className="nav-link w-full" to={user ? '/me' : '/login'} onClick={() => setMenuOpen(false)}>
-              <i className="bi bi-person-circle" />
-              <span>{user ? (user.nickname || '个人中心') : '学生账号登录'}</span>
-            </NavLink>
-          </div>
-        ) : null}
       </header>
 
       <main className="page-wrap">
-        <Outlet />
+        <div className="route-transition" key={location.pathname}>
+          <Outlet />
+        </div>
       </main>
+
+      <nav className="mobile-tab-bar" aria-label="移动端主导航">
+        <NavLink className="mobile-tab-item" to="/" end>
+          <span className="mobile-tab-icon" aria-hidden="true"><i className="bi bi-house" /></span>
+          <span className="mobile-tab-label">首页</span>
+        </NavLink>
+        <NavLink className="mobile-tab-item" to="/wall">
+          <span className="mobile-tab-icon" aria-hidden="true"><i className="bi bi-chat-square-dots" /></span>
+          <span className="mobile-tab-label">动态</span>
+        </NavLink>
+        <NavLink className="mobile-tab-item" to="/confessions">
+          <span className="mobile-tab-icon" aria-hidden="true"><i className="bi bi-heart" /></span>
+          <span className="mobile-tab-label">表白</span>
+        </NavLink>
+        <NavLink className="mobile-tab-item" to="/lost-found">
+          <span className="mobile-tab-icon" aria-hidden="true"><i className="bi bi-search" /></span>
+          <span className="mobile-tab-label">失物</span>
+        </NavLink>
+        <NavLink
+          className="mobile-tab-item"
+          to={accountDestination}
+          aria-label={user
+            ? (notificationUnread > 0 ? `${accountLabel}，${notificationUnread} 条未读通知` : accountLabel)
+            : `${accountLabel}，登录后查看`}
+        >
+          <span className="mobile-tab-icon" aria-hidden="true">
+            <i className={`bi ${user ? 'bi-person-circle' : 'bi-person'}`} />
+            {user && notificationUnread > 0 ? <span className="mobile-tab-badge">{unreadLabel}</span> : null}
+          </span>
+          <span className="mobile-tab-label">{accountLabel}</span>
+        </NavLink>
+      </nav>
 
       <footer className="app-footer">
         <div className="mx-auto max-w-4xl space-y-3">
-          <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-[var(--text-muted)]">
+          <nav className="footer-links" aria-label="页脚导航">
             <Link to="/" className="hover:text-[var(--primary-color)]">首页</Link>
-            <span>•</span>
+            <span className="footer-separator" aria-hidden="true">•</span>
             <Link to="/wall" className="hover:text-[var(--primary-color)]">校园动态</Link>
-            <span>•</span>
-            <Link to="/p" className="hover:text-[var(--primary-color)]">话题分类</Link>
-            <span>•</span>
-            <Link to="/apps" className="hover:text-[var(--primary-color)]">应用广场</Link>
-            <span>•</span>
+            <span className="footer-separator" aria-hidden="true">•</span>
+            <Link to="/confessions" className="hover:text-[var(--primary-color)]">表白墙</Link>
+            <span className="footer-separator" aria-hidden="true">•</span>
+            <Link to="/lost-found" className="hover:text-[var(--primary-color)]">失物招领</Link>
+            <span className="footer-separator" aria-hidden="true">•</span>
             <Link to="/help" className="hover:text-[var(--primary-color)]">帮助与反馈</Link>
-            <span>•</span>
+            <span className="footer-separator" aria-hidden="true">•</span>
             <Link to="/rules" className="hover:text-[var(--primary-color)]">社区公约</Link>
-          </div>
-          <p className="text-sm font-bold text-[var(--text-primary)]">
-            校园墙
+          </nav>
+          <p className="footer-brand text-sm font-semibold text-[var(--text-primary)]">
+            {siteName}
           </p>
-          <span className="text-xs text-[var(--text-muted)]">
-            让校园里的每一次表达都被温柔倾听 · 非官方学生互助交流平台
-          </span>
         </div>
       </footer>
     </div>

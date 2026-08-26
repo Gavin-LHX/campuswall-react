@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import { useAlert } from '../../contexts/AlertContext.jsx'
+import { useUser } from '../../contexts/UserContext.jsx'
+import { usePlatform } from '../../contexts/PlatformContext.jsx'
 
 export default function AdminLogin() {
   const [form, setForm] = useState({ username: '', password: '' })
@@ -9,6 +11,8 @@ export default function AdminLogin() {
   const navigate = useNavigate()
   const location = useLocation()
   const alert = useAlert()
+  const { refreshMe } = useUser()
+  const { community } = usePlatform()
 
   const submit = async (event) => {
     event.preventDefault()
@@ -17,7 +21,12 @@ export default function AdminLogin() {
       const response = await api.adminLogin(form)
       if (response.data?.success) {
         localStorage.setItem('admin_user', form.username)
-        navigate(location.state?.from?.pathname || '/admin', { replace: true })
+        await refreshMe()
+        const from = location.state?.from
+        const destination = from?.pathname
+          ? `${from.pathname}${from.search || ''}${from.hash || ''}`
+          : '/admin'
+        navigate(destination, { replace: true })
       } else {
         alert.showTopRightAlert(response.data?.error || '登录失败', 'warning', '错误')
       }
@@ -33,7 +42,7 @@ export default function AdminLogin() {
       <section className="auth-hero flex flex-col justify-center p-8">
         <div className="auth-copy max-w-xl">
           <span className="page-kicker"><i className="bi bi-shield-lock" />管理后台</span>
-          <h1 className="mt-5 text-4xl font-black">校园墙运营入口</h1>
+          <h1 className="mt-5 text-4xl font-black">{community.site_name || '校园墙'}运营入口</h1>
           <p className="mt-4 max-w-lg text-lg text-muted">用于审核留言、管理公告、处理举报和维护用户账号。请确认你正在使用可信设备。</p>
         </div>
         <div className="auth-note-grid">
@@ -47,7 +56,7 @@ export default function AdminLogin() {
         <div>
           <span className="page-kicker"><i className="bi bi-key" />Admin</span>
           <h2 className="mt-3 text-2xl font-bold">管理员登录</h2>
-          <p className="mt-1 text-sm text-muted">后台入口不会在前台导航展示。</p>
+          <p className="mt-1 text-sm text-muted">已登录的审核员、管理员和超级管理员可从页面顶部直接进入后台。</p>
         </div>
         <label className="block">
           <span className="mb-2 block text-sm font-bold">用户名</span>

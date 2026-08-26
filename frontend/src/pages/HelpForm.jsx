@@ -17,9 +17,8 @@ export default function HelpForm() {
     }
     setLoading(true)
     try {
-      const response = await api.submitHelp(form)
-      const ticketId = response.data?.ticket_id || ''
-      navigate(ticketId ? `/help/success?ticket=${encodeURIComponent(ticketId)}` : '/help/success')
+      await api.submitHelp(form)
+      navigate('/help/success')
     } catch (error) {
       alert.showTopRightAlert(error.message, 'warning', '提交失败')
     } finally {
@@ -43,9 +42,6 @@ export default function HelpForm() {
             <span>Feedback</span>
           </span>
           <h1 className="text-2xl md:text-3xl font-black text-[var(--text-primary)]">提交反馈</h1>
-          <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-            感谢你对校园墙的支持。你的每一个反馈都会认真审阅，并在后续版本中持续改进。
-          </p>
           <div className="rounded-xl border border-[var(--border-color)] bg-[var(--card-solid-bg)] p-4 text-xs text-[var(--text-muted)] space-y-1.5">
             <div className="font-bold text-[var(--text-primary)]">填写建议：</div>
             <p>1. 简要说明遇到的问题或需求</p>
@@ -102,7 +98,7 @@ export default function HelpForm() {
           </label>
 
           <div className="pt-2">
-            <button className="btn btn-primary px-8 shadow-md" disabled={loading} type="submit">
+            <button className="btn btn-primary px-8" disabled={loading} type="submit">
               <i className="bi bi-send-fill" />
               <span>{loading ? '正在提交...' : '确认提交反馈'}</span>
             </button>
