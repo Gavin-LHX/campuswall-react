@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>龙华区观澜中学校园墙 · 注册与登录图文说明</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #eef2f6;
+      --sheet: #fbfcfe;
+      --ink: #152033;
+      --muted: #5b6678;
+      --line: #d5dde8;
+      --blue: #1d4ed8;
+      --blue-ink: #163ea8;
+      --red: #b4232c;
+      --green: #0f6b52;
+      --gold: #a16207;
+      --ui-bg: #f4f5f8;
+      --ui-card: #ffffff;
+      --shadow: 0 18px 40px rgba(21, 32, 51, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #c9d3df; color: var(--ink); }
+    body {
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-feature-settings: "tnum" 1;
+    }
+    .toolbar {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 10px 20px;
+      background: rgba(21, 32, 51, 0.92);
+      color: #fff;
+      font-size: 13px;
+    }
+    .toolbar b { font-weight: 700; }
+    .toolbar button {
+      border: 0; border-radius: 999px; padding: 7px 14px;
+      background: #fff; color: var(--ink); font-weight: 700; cursor: pointer;
+    }
+    html.capture .toolbar { display: none; }
+    .deck {
+      scroll-snap-type: y mandatory;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    html.capture .deck { height: 100vh; }
+    .sheet {
+      scroll-snap-align: start;
+      min-height: 100vh;
+      padding: 28px 36px 32px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .page {
+      width: min(1180px, 100%);
+      min-height: calc(100vh - 72px);
+      background: var(--sheet);
+      border: 1px solid #cfd8e4;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      padding: 36px 48px 42px 72px;
+    }
+    .spine {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 36px;
+      background: linear-gradient(180deg, #1d4ed8, #163ea8);
+      color: #fff;
+      writing-mode: vertical-rl;
+      display: flex; align-items: center; justify-content: center;
+      letter-spacing: 0.28em;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .folio {
+      position: absolute; top: 22px; right: 28px;
+      font-size: 12px; color: var(--muted); letter-spacing: 0.08em;
+    }
+    h1, h2, .serif { font-family: "Noto Serif SC", "Songti SC", serif; }
+    h1 { margin: 0 0 10px; font-size: 42px; letter-spacing: 0.04em; }
+    h2 { margin: 0 0 18px; font-size: 30px; }
+    p { margin: 0; color: var(--muted); line-height: 1.7; }
+    .kicker {
+      display: inline-flex; align-items: center; gap: 8px;
+      color: var(--red); font-weight: 700; font-size: 13px; letter-spacing: 0.18em;
+      margin-bottom: 12px;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 28px; align-items: start; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .card {
+      background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 16px;
+    }
+    .path {
+      border-top: 4px solid var(--blue);
+    }
+    .path.alt { border-top-color: var(--gold); }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700;
+      background: #e8eefc; color: var(--blue-ink);
+    }
+    .badge.warn { background: #f8ead2; color: #8a5400; }
+    .badge.ok { background: #d9f0e7; color: var(--green); }
+    .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+    .steps li {
+      display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: start;
+    }
+    .num {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--blue); color: #fff; display: grid; place-items: center;
+      font-weight: 900;
+    }
+    .ui {
+      background: #111827; border-radius: 18px; padding: 10px 10px 14px;
+      box-shadow: 0 20px 40px rgba(17, 24, 39, 0.25);
+    }
+    .ui-bar {
+      display: flex; align-items: center; gap: 8px; color: #9ca3af; font-size: 11px; padding: 4px 8px 10px;
+    }
+    .dots span { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4b5563; margin-right: 4px; }
+    .dots span:first-child { background: #f87171; }
+    .ui-screen {
+      background: var(--ui-bg); border-radius: 12px; overflow: hidden; min-height: 430px;
+    }
+    .nav {
+      height: 46px; background: rgba(255,255,255,.92); border-bottom: 1px solid #e5e7eb;
+      display: flex; align-items: center; justify-content: space-between; padding: 0 12px;
+      font-size: 12px; font-weight: 700;
+    }
+    .brand { display: flex; align-items: center; gap: 8px; }
+    .brand img { width: 22px; height: 22px; border-radius: 50%; background: #fff; }
+    .login-wrap { display: grid; grid-template-columns: 1fr 280px; gap: 16px; padding: 18px; }
+    .hero-copy h3 { margin: 0 0 12px; font-size: 22px; color: var(--ink); }
+    .note { display: flex; gap: 8px; align-items: center; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+    .ico { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: #e8eefc; color: var(--blue); font-size: 14px; }
+    .panel { background: #fff; border-radius: 14px; padding: 14px; box-shadow: 0 8px 24px rgba(15,23,42,.06); }
+    .panel h4 { margin: 0 0 10px; font-size: 16px; }
+    .feishu {
+      width: 100%; border: 0; border-radius: 10px; padding: 9px 0;
+      background: var(--blue); color: #fff; font-weight: 700; font-size: 13px;
+    }
+    .or { display: flex; align-items: center; gap: 8px; color: #9aa3b2; font-size: 10px; letter-spacing: .08em; margin: 10px 0; }
+    .or::before, .or::after { content: ""; height: 1px; background: #e5e7eb; flex: 1; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; background: #f3f4f6; border-radius: 10px; padding: 3px; margin-bottom: 10px; }
+    .tabs span { text-align: center; font-size: 12px; font-weight: 700; padding: 6px 0; border-radius: 8px; color: #6b7280; }
+    .tabs .on { background: var(--blue); color: #fff; }
+    .field { margin-bottom: 8px; }
+    .field label { display: block; font-size: 10px; font-weight: 700; color: #6b7280; margin-bottom: 3px; }
+    .field b {
+      display: block; height: 30px; border: 1px solid #e5e7eb; border-radius: 8px;
+      background: #fafafa; color: #9ca3af; font-weight: 500; font-size: 11px;
+      padding: 7px 10px;
+    }
+    .check { font-size: 11px; color: #4b5563; margin: 6px 0 10px; }
+    .submit {
+      width: 100%; border: 0; border-radius: 10px; padding: 9px 0;
+      background: var(--blue); color: #fff; font-weight: 700; font-size: 13px;
+    }
+    .cover-badge {
+      width: 86px; height: 86px; border-radius: 50%; background: #fff;
+      box-shadow: 0 8px 24px rgba(180, 35, 44, 0.15); object-fit: cover;
+    }
+    .stamp {
+      position: absolute; right: 54px; bottom: 54px;
+      width: 110px; height: 110px; border: 3px solid var(--red); color: var(--red);
+      border-radius: 8px; transform: rotate(-12deg);
+      display: grid; place-items: center; text-align: center;
+      font-family: "Noto Serif SC", serif; font-weight: 700; font-size: 16px; line-height: 1.35;
+      opacity: .85;
+    }
+    .faq dt { font-weight: 800; margin: 0 0 4px; }
+    .faq dd { margin: 0 0 14px; color: var(--muted); }
+    .tiny { font-size: 12px; color: var(--muted); }
+    @media print {
+      .toolbar { display: none !important; }
+      .deck { height: auto; overflow: visible; }
+      .sheet { height: auto; min-height: 0; page-break-after: always; padding: 0; }
+      .page { min-height: 270mm; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div>龙华区观澜中学 · 校园墙使用说明　全屏后按页滚动，<b>一页截一张图</b></div>
+    <button type="button" id="captureBtn">进入截图模式</button>
+  </div>
+  <main class="deck">
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">01 / 08</div>
+        <div class="kicker">学生使用说明　·　2026 年 8 月</div>
+        <img class="cover-badge" src="tutorial-assets/school-badge.webp" alt="观澜中学校徽" />
+        <h1 style="margin-top:18px">校园墙<br />注册与登录图文教程</h1>
+        <p style="max-width:620px;font-size:18px;margin-top:12px">给在校师生看的进入说明。网站地址：<b style="color:var(--ink)">https://wall.zongtech.xyz</b>。本页只讲前台登录，不涉及后台账号发放。</p>
+        <div class="grid-3" style="margin-top:36px">
+          <div class="card"><div class="badge ok">推荐</div><h3 style="margin:10px 0 6px">飞书登录</h3><p>已在「观澜中学校园墙」飞书群内的同学，打开网站即可立即进入，不必等待审核。</p></div>
+          <div class="card"><div class="badge warn">需审核</div><h3 style="margin:10px 0 6px">用户名注册</h3><p>填写用户名和密码提交后，由审核员在后台通过，才能用同一组账号密码登录。</p></div>
+          <div class="card"><div class="badge">可后补</div><h3 style="margin:10px 0 6px">邮箱与飞书绑定</h3><p>邮箱选填，用于接收消息。已用密码登录的同学，可在「我的」里再连接飞书。</p></div>
+        </div>
+        <div class="stamp">学生<br />使用</div>
+      </article>
+    </section>
+
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">02 / 08</div>
+        <div class="kicker">先看这一页</div>
+        <h2>两条路，选一条就能进</h2>
+        <div class="grid-2" style="margin-top:8px">
+          <div class="card path">
+            <div class="badge ok">路径甲　飞书立即进入</div>
+            <h3 style="margin:14px 0 8px">我已经在校园墙飞书群里</h3>
+            <ol class="steps">
+              <li><span class="num">1</span><div><b>打开网站</b><p>浏览器进入 wall.zongtech.xyz，点右上角「登录」。</p></div></li>
+              <li><span class="num">2</span><div><b>使用飞书登录</b><p>电脑弹出飞书授权页后扫码；手机一般会跳转飞书 App。</p></div></li>
+              <li><span class="num">3</span><div><b>直接进入</b><p>通过后立刻可以使用校园动态、表白墙、失物招领填写等功能。</p></div></li>
+            </ol>
+          </div>
+          <div class="card path alt">
+            <div class="badge warn">路径乙　用户名密码</div>
+            <h3 style="margin:14px 0 8px">我还没有进飞书群</h3>
+            <ol class="steps">
+              <li><span class="num">1</span><div><b>注册</b><p>在登录页切换到「注册」，设用户名和至少 8 位密码。邮箱可以先空着。</p></div></li>
+              <li><span class="num">2</span><div><b>等审核</b><p>提交后不能马上登录。审核员在「用户与权限」通过后才会开通。</p></div></li>
+              <li><span class="num">3</span><div><b>再登录</b><p>用同一用户名密码登录。之后可在「我的」补邮箱、连接飞书。</p></div></li>
+            </ol>
+          </div>
+        </div>
+        <p class="tiny" style="margin-top:22px">未登录也可以浏览失物招领列表；填写启事、发帖、评论需要登录。网站不会在页面上展示加群二维码，进群请按学校飞书工作安排，不要向同学索要过期群码。</p>
+      </article>
+    </section>
+
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">03 / 08</div>
+        <div class="kicker">路径甲</div>
+        <h2>飞书登录长这样</h2>
+        <div class="grid-2">
+          <div>
+            <p style="margin-bottom:16px">登录页左侧三条提示，右侧主按钮就是飞书。点「使用飞书登录」后，会跳到飞书官方授权，不是校园墙自己做的假登录页。</p>
+            <ul class="steps">
+              <li><span class="num">1</span><div><b>右上角点「登录」</b><p>任意公开页都可以进入登录页。</p></div></li>
+              <li><span class="num">2</span><div><b>点蓝色主按钮</b><p>不要先去填用户名。群成员走飞书即可。</p></div></li>
+              <li><span class="num">3</span><div><b>在飞书里同意</b><p>电脑扫码，手机跟 App 走。同意后自动回到校园墙。</p></div></li>
+            </ul>
+          </div>
+          <div class="ui">
+            <div class="ui-bar"><span class="dots"><span></span><span></span><span></span></span>wall.zongtech.xyz/login</div>
+            <div class="ui-screen">
+              <div class="nav">
+                <div class="brand"><img src="tutorial-assets/school-badge.webp" alt="" />观澜中学</div>
+                <div>首页　动态　表白墙　失物招领</div>
+                <div>登录</div>
+              </div>
+              <div class="login-wrap">
+                <div class="hero-copy">
+                  <h3>进入校园墙</h3>
+                  <div class="note"><span class="ico">→</span>飞书立即进入</div>
+                  <div class="note"><span class="ico">⏳</span>密码注册要审核</div>
+                  <div class="note"><span class="ico">⌕</span>失物招领可追溯</div>
+                </div>
+                <div class="panel">
+                  <h4>登录校园墙</h4>
+                  <button class="feishu" type="button">使用飞书登录</button>
+                  <div class="or">或使用用户名密码</div>
+                  <div class="tabs"><span class="on">登录</span><span>注册</span></div>
+                  <div class="field"><label>用户名</label><b>输入你的用户名</b></div>
+                  <div class="field"><label>登录密码</label><b>请输入密码</b></div>
+                  <button class="submit" type="button">用户名密码登录</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">04 / 08</div>
+        <div class="kicker">路径甲 · 进群规则</div>
+        <h2>飞书登录只认指定内部群</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="margin:0 0 10px">必须满足</h3>
+            <p>同学的飞书账号已经在学校指定的内部群「观澜中学校园墙」里。网站按群成员核对，不按群的名字判断，群改名也不影响。</p>
+            <p style="margin-top:12px">飞书登录成功后立即成为普通用户，不必再走人工审核。飞书登录不会变成管理员；后台另有入口和账号。</p>
+          </div>
+          <div class="card">
+            <h3 style="margin:0 0 10px">常见失败提示</h3>
+            <dl class="faq">
+              <dt>你不在指定的校园墙飞书群中</dt>
+              <dd>先请老师或管理员把你拉进「观澜中学校园墙」，再点飞书登录。</dd>
+              <dt>登录已过期，请重新点击飞书登录</dt>
+              <dd>授权页放太久会失效，回到网站再点一次主按钮即可。</dd>
+              <dt>已取消飞书登录</dt>
+              <dd>在飞书授权页点了拒绝。需要进入时重新点「使用飞书登录」。</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="card" style="margin-top:18px">
+          <b>请老师注意：</b>
+          <p style="margin-top:8px">学生登录群和管理员审核群是两个群。学生飞书登录只校验学生群。不要把审核提醒发到学生群，也不要让学生去加管理员群才能上网。</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">05 / 08</div>
+        <div class="kicker">路径乙</div>
+        <h2>用户名注册长这样</h2>
+        <div class="grid-2">
+          <div>
+            <p style="margin-bottom:14px">在登录页点「注册」选项卡。提交后页面会提示「等待审核」，不会当场发登录 Cookie。</p>
+            <ol class="steps">
+              <li><span class="num">1</span><div><b>用户名</b><p>2–24 个字，可中文、字母、数字、点、下划线和短横线。</p></div></li>
+              <li><span class="num">2</span><div><b>密码两次</b><p>至少 8 个字符，两次必须一致。</p></div></li>
+              <li><span class="num">3</span><div><b>邮箱选填</b><p>用于接收评论等消息。可空着，以后在「我的」里再填。勾选「验证邮箱后接收消息通知」。</p></div></li>
+              <li><span class="num">4</span><div><b>提交注册审核</b><p>看到成功提示后，等审核员通过。通过前用密码登录会提示账号审核中。</p></div></li>
+            </ol>
+          </div>
+          <div class="ui">
+            <div class="ui-bar"><span class="dots"><span></span><span></span><span></span></span>wall.zongtech.xyz/login　注册</div>
+            <div class="ui-screen">
+              <div class="nav">
+                <div class="brand"><img src="tutorial-assets/school-badge.webp" alt="" />观澜中学</div>
+                <div>回登录</div>
+              </div>
+              <div style="padding:18px;display:flex;justify-content:flex-end">
+                <div class="panel" style="width:280px">
+                  <h4>登录校园墙</h4>
+                  <button class="feishu" type="button">使用飞书登录</button>
+                  <div class="or">或使用用户名密码</div>
+                  <div class="tabs"><span>登录</span><span class="on">注册</span></div>
+                  <div class="field"><label>用户名</label><b>输入你的用户名</b></div>
+                  <div class="field"><label>设置密码</label><b>至少 8 个字符</b></div>
+                  <div class="field"><label>确认密码</label><b>再次输入密码</b></div>
+                  <div class="field"><label>邮箱（选填）</label><b>用于接收消息，可稍后在主页添加</b></div>
+                  <div class="check">☑ 验证邮箱后接收消息通知</div>
+                  <button class="submit" type="button">提交注册审核</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">06 / 08</div>
+        <div class="kicker">路径乙 · 审核之后</div>
+        <h2>审核通过，再用密码登录</h2>
+        <div class="grid-3">
+          <div class="card">
+            <div class="badge warn">提交之后</div>
+            <h3 style="margin:12px 0 8px">还进不去</h3>
+            <p>注册只创建待审普通账号。此时即使用对了密码，也会提示等待审核，不会进入「我的」。</p>
+          </div>
+          <div class="card">
+            <div class="badge">老师操作</div>
+            <h3 style="margin:12px 0 8px">用户与权限</h3>
+            <p>审核员在管理后台「用户与权限」中通过该注册。拒绝后该用户名不可再用来登录。</p>
+          </div>
+          <div class="card">
+            <div class="badge ok">通过之后</div>
+            <h3 style="margin:12px 0 8px">同一组账号</h3>
+            <p>回到登录页，留在「登录」选项卡，输入注册时的用户名和密码，点「用户名密码登录」。</p>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <h3 style="margin:0 0 8px">和飞书有什么关系？</h3>
+          <p>密码账号通过后，可以在「我的」点「连接飞书账户」。连接成功后，以后也可以改用飞书登录这个账号。若飞书号已经绑在别人账号上，网站会拒绝，不会把两个学生号并成一个。</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">07 / 08</div>
+        <div class="kicker">登录之后</div>
+        <h2>「我的」：补邮箱、连飞书</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="margin:0 0 10px">邮箱通知</h3>
+            <p>登录后打开右上角头像进入「我的」。在「邮箱通知」填地址，点「发送验证邮件」，到邮箱打开链接完成验证。验证前不会发评论副本。</p>
+            <p style="margin-top:10px">注册时如果已经填过邮箱，同样需要点邮件里的链接。链接 24 小时内有效。</p>
+          </div>
+          <div class="card">
+            <h3 style="margin:0 0 10px">飞书账户</h3>
+            <p>密码登录的同学可点「连接飞书账户」，用飞书授权把当前校园墙账号挂上自己的飞书。连接后会尝试把你拉进校园墙飞书群。</p>
+            <p style="margin-top:10px">若提示「已绑定，但自动进群失败」，账号其实已经连上，进群请联系管理员，网站不会假装你已经在群里。</p>
+          </div>
+        </div>
+        <div class="ui" style="margin-top:20px">
+          <div class="ui-bar"><span class="dots"><span></span><span></span><span></span></span>wall.zongtech.xyz/me</div>
+          <div class="ui-screen" style="min-height:220px;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f3f4f6">
+            <div class="panel">
+              <h4>邮箱通知</h4>
+              <div class="field"><label>添加邮箱</label><b>用于接收评论等消息</b></div>
+              <div class="check">☐ 验证后接收邮件通知</div>
+              <button class="submit" type="button">发送验证邮件</button>
+            </div>
+            <div class="panel">
+              <h4>飞书账户</h4>
+              <p style="font-size:12px;margin-bottom:12px">连接后自动加入校园墙飞书群，也可用飞书登录。</p>
+              <button class="feishu" type="button">连接飞书账户</button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="sheet">
+      <article class="page">
+        <div class="spine">龙华区观澜中学 · 校园墙</div>
+        <div class="folio">08 / 08</div>
+        <div class="kicker">交给学校的时候可以停在这一页</div>
+        <h2>问答与边界</h2>
+        <div class="grid-2">
+          <dl class="faq">
+            <dt>游客能干什么？</dt>
+            <dd>可以看校园动态、表白墙和失物招领列表。发帖、评论、填写失物招领必须登录。</dd>
+            <dt>默认匿名吗？</dt>
+            <dd>发帖默认匿名。登录用户可以改成展示昵称；游客只能匿名发。</dd>
+            <dt>登录页下面「管理员入口」是给学生的吗？</dt>
+            <dd>不是。那是审核员、管理员用用户名密码进后台的入口。学生不要使用，后台账号由学校单独发放，不能在前台注册成管理员。</dd>
+            <dt>邮箱收不到验证信？</dt>
+            <dd>看垃圾邮件。仍没有就在「我的」再发一次。学校发信箱配置异常时，注册本身仍成功，只是信发不出去。</dd>
+          </dl>
+          <div>
+            <div class="card">
+              <h3 style="margin:0 0 8px">本说明覆盖的地址</h3>
+              <p>前台　https://wall.zongtech.xyz</p>
+              <p>登录　https://wall.zongtech.xyz/login</p>
+              <p>我的　https://wall.zongtech.xyz/me</p>
+            </div>
+            <div class="card" style="margin-top:14px">
+              <h3 style="margin:0 0 8px">文档用途</h3>
+              <p>本稿按 2026 年 8 月生产环境功能编写，供学校教务、德育或信息组验收学生如何进入校园墙。截图时建议浏览器全屏，翻到每一页后再截，避免把顶部黑条截进去：点「进入截图模式」即可隐藏操作条。</p>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>
+    const root = document.documentElement
+    const button = document.getElementById('captureBtn')
+    button.addEventListener('click', () => {
+      const on = root.classList.toggle('capture')
+      button.textContent = on ? '退出截图模式' : '进入截图模式'
+    })
+  </script>
+</body>
+</html>
