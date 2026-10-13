@@ -21,7 +21,7 @@
     "db:migrate": "npm --workspace backend run migrate:sqlite"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5"
+    "concurrently": "^10.0.6"
   },
   "engines": {
     "node": ">=20"
